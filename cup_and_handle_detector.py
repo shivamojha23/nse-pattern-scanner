@@ -66,6 +66,7 @@ import numpy as np                     # Fast math on arrays of numbers
 import pandas as pd                    # DataFrames — like Excel spreadsheets in Python
 import yfinance as yf                  # Downloads stock price data from Yahoo Finance
 from scipy.signal import find_peaks    # Finds local highs/lows in a price curve
+from scipy.stats import linregress     # Calculates linear regression slope
 
 # Suppress noisy warnings from yfinance / pandas
 warnings.filterwarnings("ignore", category=FutureWarning)
@@ -142,6 +143,27 @@ MIN_HANDLE_CANDLES = 5
 
 # Maximum allowed average deviation (in %) for the right rim peak stability check.
 RIGHT_RIM_STABILITY_PCT = 3.0
+
+
+# ─── NEW DETECTION PARAMETERS (Bug Fixes) ─────────────────────────────────
+# For Bug 1 (Bottom Roundedness)
+# Percentage above cup bottom to be considered the "base zone"
+BASE_ZONE_PCT = 0.05
+# Minimum percentage of cup candles that must be in the base zone
+MIN_BASE_CANDLES_PCT = 0.20
+
+# For Bug 2 (Handle Low Lock)
+# Consecutive candles closing above the right rim required to confirm breakout
+BREAKOUT_CONFIRM_CANDLES = 3
+# Maximum candles to look forward for a breakout before giving up on the handle
+MAX_HANDLE_LOOKFORWARD_CANDLES = 30
+
+# For Bug 3 (Genuine Pause Before Breakout)
+# Minimum number of candles the price must pause/consolidate before breaking out
+MIN_PAUSE_CANDLES = 5
+# For Bug 5 (Discontinuity / Smoothness)
+# Maximum allowed single-day percentage change inside the cup (to prevent gappy/jagged cups)
+MAX_DISCONTINUITY_PCT = 0.08
 
 
 # ─── LIVE-MODE DEDUPLICATION CACHE ─────────────────────────────────────────
@@ -410,6 +432,7 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
 
     # We need at least 2 peaks and 1 trough to form a cup.
     if len(peak_indices) < 2 or len(trough_indices) < 1:
+        if verbose: print(f"DEBUG: Not enough peaks/troughs: peaks={peak_indices} troughs={trough_indices}")
         return []
 
     # Collect ALL candidate patterns first, then deduplicate.
@@ -422,6 +445,8 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
             right_rim_idx = peak_indices[j]
             left_rim_price = prices[left_rim_idx]
             right_rim_price = prices[right_rim_idx]
+            if right_rim_price == 0:
+                continue
 
             # ── Rule 1: Dynamic Trend Check (Adaptive Left Rim) ──
             # Determine if we're dealing with macro data (Daily/Weekly)
@@ -474,6 +499,8 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
             # (In other words, the recovery must be clean).
             prices_after_bottom = prices[cup_bottom_idx:right_rim_idx + 1]
             if len(prices_after_bottom) > 0 and np.min(prices_after_bottom) < cup_bottom_price:
+                if verbose:
+                    print(f"  ❌ REJECTED {ticker}: Double dip detected below cup bottom.")
                 continue   # double dip occurred
 
             # ── Step 3b-extra: Cup SYMMETRY check ──
@@ -487,48 +514,6 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
             if not (left_margin <= cup_bottom_idx <= right_margin):
                 continue   # bottom hugs one rim — V-shape, not a cup
 
-            # ══════════════════════════════════════════════════════════
-            # ── Step 3b-extra2: LEFT RIM ABSOLUTE CEILING CHECK ──
-            # ══════════════════════════════════════════════════════════
-            #
-            #   "Intermediate High Violation" filter
-            #   ------------------------------------
-            #   After selecting a Left Rim peak, NO candle inside the cup
-            #   (between Left Rim and Right Rim) may have a High price that
-            #   exceeds the Left Rim candle's own High. If it does, the
-            #   Left Rim was never the true structural ceiling — the cup
-            #   geometry is fake.
-            #
-            #   We compare internal Highs against the Left Rim's own High
-            #   (not Close) because the rim's intraday wick tip is the
-            #   absolute structural maximum. Any candle whose High exceeds
-            #   that is a clear intermediate breakout.
-            #
-            #   ZERO tolerance — even a ₹1 breach means the Left Rim was
-            #   not the true peak. The old 0.5% buffer let through cases
-            #   like ABB.NS where a ₹7490 High slipped under a ₹7495
-            #   ceiling despite being ₹32 above the Left Rim Close.
-            # ──────────────────────────────────────────────────────────
-            rim_ceiling = highs[left_rim_idx]              # Left Rim's own High
-            highs_inside_cup = highs[left_rim_idx + 1 : right_rim_idx]
-
-            if len(highs_inside_cup) > 0:
-                max_internal_high = np.max(highs_inside_cup)
-                if max_internal_high > rim_ceiling:
-                    if verbose:
-                        breach_local_idx = np.argmax(highs_inside_cup)
-                        breach_abs_idx   = left_rim_idx + 1 + breach_local_idx
-                        breach_date_str  = (
-                            str(dates[breach_abs_idx]) if dates is not None
-                            else f"idx {breach_abs_idx}"
-                        )
-                        print(
-                            f"  ❌ REJECTED {ticker}: Internal high "
-                            f"₹{max_internal_high:.2f} on {breach_date_str} "
-                            f"exceeded Left Rim High ₹{rim_ceiling:.2f} — "
-                            f"Intermediate High Violation"
-                        )
-                    continue   # FAKE cup — reject immediately
 
             # ── Step 3b: Cup depth check ──
             # Drop % = how much the price fell from the Left Rim to the Bottom.
@@ -546,71 +531,167 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
             if recovery_pct > MAX_RECOVERY_GAP_PCT:
                 continue   # Right Rim is too far from Left Rim
 
-            # ── Step 3d: Handle detection ──
-            # Look for a mild pullback in the candles AFTER the Right Rim.
-            # Handle search window strictly scales up to 25% of the total cup duration.
-            handle_zone_start = right_rim_idx
-            handle_zone_end = min(right_rim_idx + max(1, cup_width // 4),
-                                  len(prices) - 1)
+            # ── Step 3d: Handle detection & BUG 2/3 FIX ──
+            if right_rim_idx + 1 >= len(prices):
+                continue
+                
+            # Calculate the OLD handle logic (first dip in 25% window) strictly for debug reporting
+            old_handle_zone_end = min(right_rim_idx + max(1, cup_width // 4), len(prices) - 1)
+            old_handle_prices = prices[right_rim_idx : old_handle_zone_end + 1]
+            old_handle_low_price = np.min(old_handle_prices) if len(old_handle_prices) > 0 else right_rim_price
 
-            if handle_zone_end <= handle_zone_start + 3:
-                continue   # not enough data after Right Rim for a handle
+            # Scan forward to find true handle low
+            current_handle_low = prices[right_rim_idx]
+            current_handle_low_idx = right_rim_idx
+            breakout_count = 0
+            breakout_confirmed = False
+            breakout_start_idx = -1
+            
+            for k in range(right_rim_idx + 1, min(len(prices), right_rim_idx + 1 + MAX_HANDLE_LOOKFORWARD_CANDLES)):
+                curr_price = prices[k]
+                
+                # Update current handle low
+                if curr_price < current_handle_low:
+                    current_handle_low = curr_price
+                    current_handle_low_idx = k
+                    
+                # Breakout check (closing above Right Rim)
+                if curr_price > right_rim_price:
+                    breakout_count += 1
+                else:
+                    breakout_count = 0  # must be consecutive
+                    
+                if breakout_count >= BREAKOUT_CONFIRM_CANDLES:
+                    breakout_confirmed = True
+                    breakout_start_idx = k - BREAKOUT_CONFIRM_CANDLES + 1
+                    break
 
-            handle_prices = prices[handle_zone_start : handle_zone_end + 1]
-            handle_low_price = np.min(handle_prices)
-            handle_low_local_idx = np.argmin(handle_prices)
-            handle_low_idx = handle_zone_start + handle_low_local_idx
+            handle_low_price = current_handle_low
+            handle_low_idx = current_handle_low_idx
+            
+            # BUG 3 FIX: Pause Before Breakout check
+            pause_duration = (breakout_start_idx - right_rim_idx) if breakout_confirmed else 0
+            
+            handle_slope = 0
+            if breakout_confirmed and pause_duration > 1:
+                # Linear regression slope of prices in the pause window
+                pause_prices = prices[right_rim_idx : breakout_start_idx + 1]
+                res = linregress(np.arange(len(pause_prices)), pause_prices)
+                handle_slope = res.slope
 
             # ══════════════════════════════════════════════════════════
-            # ── Step 3e: Handle depth check  (VERIFIED GEOMETRY) ──
+            # ── Step 3e: Handle validation tracking ──
             # ══════════════════════════════════════════════════════════
-            #
-            #   Cup Depth      = Left_Rim_Price − Cup_Bottom_Price
-            #   Max Handle Dip = HANDLE_MAX_RETRACE_RATIO × Cup Depth
-            #                  = 0.32 × Cup Depth  (by default)
-            #
-            #   Handle Pullback = Right_Rim_Price − Handle_Low_Price
-            #
-            #   RULE: Handle Pullback must be ≥ 1% of Right Rim (real dip)
-            #         AND ≤ Max Handle Dip         (dip is shallow enough).
-            #   If it exceeds Max Handle Dip → IMMEDIATELY REJECT.
-            #
+            
+            # BUG 1 FIX: Bottom Roundedness Check (Calculate here for full pattern reporting)
+            base_zone_max = cup_bottom_price * (1 + BASE_ZONE_PCT)
+            cup_candles = prices[left_rim_idx:right_rim_idx]
+            base_candles_count = np.sum(cup_candles <= base_zone_max)
+            roundedness_pct = (base_candles_count / len(cup_candles)) if len(cup_candles) > 0 else 0
+
             cup_depth = left_rim_price - cup_bottom_price
             max_handle_dip = HANDLE_MAX_RETRACE_RATIO * cup_depth
             handle_pullback = right_rim_price - handle_low_price
-
-            # No meaningful dip — handle must pull back at least 1% of
-            # the right rim price to count as a real dip (not noise).
-            min_handle_pullback = right_rim_price * 0.01
-            if handle_pullback < min_handle_pullback:
-                continue
-
-            # Handle dipped deeper than the allowed 32% of cup depth — reject.
-            if handle_pullback > max_handle_dip:
-                continue
-
-            # Compute percentage for display purposes.
             handle_pullback_pct = (handle_pullback / right_rim_price) * 100
-
-            # ── NEW RULE: Minimum Handle Duration ──
+            
+            min_handle_pullback = right_rim_price * 0.01
             handle_duration = handle_low_idx - right_rim_idx
-            if handle_duration < MIN_HANDLE_CANDLES:
-                continue   # handle formed too quickly (likely just noise)
+            
+            # BUG 4 FIX: Intermediate High / Internal Close Violation Check
+            rim_ceiling = highs[left_rim_idx]
+            highs_inside_cup = highs[left_rim_idx + 1 : right_rim_idx]
+            closes_inside_cup = prices[left_rim_idx + 1 : right_rim_idx]
+            
+            max_internal_high = np.max(highs_inside_cup) if len(highs_inside_cup) > 0 else 0
+            max_internal_close = np.max(closes_inside_cup) if len(closes_inside_cup) > 0 else 0
 
-            # ── Rule 5: Time Proportions ──
-            # The Cup must take significantly longer to form than the Handle.
-            # Cup Width must be >= 3 * Handle Width.
-            if handle_duration > 0 and cup_width < 3 * handle_duration:
+            # BUG 5 FIX: Discontinuity Check
+            cup_closes_for_diff = prices[left_rim_idx : right_rim_idx + 1]
+            if len(cup_closes_for_diff) > 1:
+                daily_returns = np.abs(np.diff(cup_closes_for_diff) / cup_closes_for_diff[:-1])
+                max_daily_jump = np.max(daily_returns)
+            else:
+                max_daily_jump = 0
+            
+            is_valid = True
+            reject_reason = ""
+            
+            # Evaluate rejection reasons in order of priority
+            if max_internal_close > left_rim_price:
+                is_valid = False
+                reject_reason = f"Internal close (₹{max_internal_close:.2f}) exceeded Left Rim close (₹{left_rim_price:.2f}) — Structural Violation."
+            elif max_internal_high > rim_ceiling:
+                is_valid = False
+                reject_reason = f"Internal high (₹{max_internal_high:.2f}) exceeded Left Rim High (₹{rim_ceiling:.2f}) — Structural Violation."
+            elif max_daily_jump > MAX_DISCONTINUITY_PCT:
+                is_valid = False
+                reject_reason = f"Excessive price discontinuity ({max_daily_jump*100:.1f}% single-day jump > {MAX_DISCONTINUITY_PCT*100}% limit)."
+            elif roundedness_pct < MIN_BASE_CANDLES_PCT:
+                is_valid = False
+                reject_reason = f"V-shape recovery. Bottom roundedness {base_candles_count}/{len(cup_candles)} ({roundedness_pct*100:.1f}%) < {MIN_BASE_CANDLES_PCT*100}% required."
+            elif handle_pullback < min_handle_pullback:
+                is_valid = False
+                reject_reason = "Handle pullback too small (<1%)."
+            elif not breakout_confirmed:
+                is_valid = False
+                reject_reason = f"Handle incomplete / no breakout confirmed within {MAX_HANDLE_LOOKFORWARD_CANDLES} candles."
+            elif pause_duration < MIN_PAUSE_CANDLES:
+                is_valid = False
+                reject_reason = f"No real handle — immediate continuation (breakout in {pause_duration} candles < {MIN_PAUSE_CANDLES}), not Cup & Handle."
+            elif handle_slope > 0:
+                is_valid = False
+                reject_reason = f"Handle is not a genuine pause (slope {handle_slope:.2f} > 0). Resumed upward momentum before breakout."
+            elif handle_pullback > max_handle_dip:
+                is_valid = False
+                reject_reason = f"Corrected handle pullback (₹{handle_pullback:.2f}) exceeded 0.32× depth (₹{max_handle_dip:.2f})."
+            elif handle_duration < MIN_HANDLE_CANDLES:
+                is_valid = False
+                reject_reason = f"Handle formed too quickly (<{MIN_HANDLE_CANDLES} candles)."
+            elif handle_duration > 0 and cup_width < 3 * handle_duration:
+                is_valid = False
+                reject_reason = "Cup duration must be at least 3x handle duration."
+            else:
+                # Right Rim Stability check
+                rim_window_start = max(0, right_rim_idx - 2)
+                rim_window_end = min(len(prices), right_rim_idx + 3)
+                rim_window_prices = prices[rim_window_start:rim_window_end]
+                if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
+                    is_valid = False
+                    reject_reason = "Right rim is too spiky (failed stability check)."
+
+            # If invalid and we aren't verbose, drop it.
+            if not is_valid and not verbose:
                 continue
 
-            # ── NEW RULE: Right Rim Stability ──
-            # Prevent single-candle sharp spikes at the right rim.
-            # Check the average price of surrounding candles.
-            rim_window_start = max(0, right_rim_idx - 2)
-            rim_window_end = min(len(prices), right_rim_idx + 3)
-            rim_window_prices = prices[rim_window_start:rim_window_end]
-            if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
-                continue  # right rim is too spiky
+            # Scan forward to find true handle low
+            current_handle_low = prices[right_rim_idx]
+            current_handle_low_idx = right_rim_idx
+            breakout_count = 0
+            breakout_confirmed = False
+            
+            for k in range(right_rim_idx + 1, min(len(prices), right_rim_idx + 1 + MAX_HANDLE_LOOKFORWARD_CANDLES)):
+                curr_price = prices[k]
+                
+                # Update current handle low
+                if curr_price < current_handle_low:
+                    current_handle_low = curr_price
+                    current_handle_low_idx = k
+                    
+                # Breakout check (closing above Right Rim)
+                if curr_price > right_rim_price:
+                    breakout_count += 1
+                else:
+                    breakout_count = 0  # must be consecutive
+                    
+                if breakout_count >= BREAKOUT_CONFIRM_CANDLES:
+                    breakout_confirmed = True
+                    break
+
+            handle_low_price = current_handle_low
+            handle_low_idx = current_handle_low_idx
+
+
+
 
             # ════════════════ CANDIDATE PATTERN ════════════════
             pattern = {
@@ -633,6 +714,14 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
                 "cup_right_duration":  int(cup_right_duration),
                 "handle_duration":     int(handle_duration),
                 "double_dip_passed":   True,
+                "roundedness_pct":     round(roundedness_pct * 100, 1),
+                "base_candles":        int(base_candles_count),
+                "cup_width":           int(len(cup_candles)),
+                "old_handle_low":      round(old_handle_low_price, 2),
+                "breakout_confirmed":  breakout_confirmed,
+                "pause_duration":      int(pause_duration),
+                "handle_slope":        round(handle_slope, 4),
+                "reject_reason":       reject_reason,
             }
 
             # Attach dates if available (for reporting).
@@ -642,6 +731,12 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
                 pattern["right_rim_date"]  = str(dates[right_rim_idx])
                 pattern["handle_low_date"] = str(dates[handle_low_idx])
 
+            # If we have a pattern that wasn't valid, but we are verbose, print it!
+            if not is_valid and verbose:
+                print_pattern(pattern, index="REJECTED")
+                continue
+                
+            # Store valid candidates for deduplication
             candidates.append(pattern)
 
     # ══════════════════════════════════════════════════════════════════════
@@ -669,7 +764,7 @@ def detect_cup_and_handle(prices, ticker="UNKNOWN", dates=None, interval="15m", 
         cb_idx = candidate["cup_bottom_idx"]
         rr_idx = candidate["right_rim_idx"]
 
-        # Check if this candidate overlaps with any already-accepted pattern.
+        # Deduplication: check if this pattern overlaps with one already found.
         is_duplicate = False
         for claimed_cb, claimed_rr in claimed_regions:
             if (abs(cb_idx - claimed_cb) <= OVERLAP_TOLERANCE and
@@ -709,24 +804,30 @@ def print_pattern(p, index=1):
     print(f"  Recovery Gap : {p['recovery_pct']}%  "
           f"(how close Right Rim is to Left Rim; <3% = good)")
     print(f"  ─────────────────────────────────────────────────")
-    print(f"  ✦ GEOMETRY CHECK (verified formula)")
+    print(f"  ✦ GEOMETRY CHECK")
     print(f"    Cup Depth (₹)              : ₹{p['cup_depth']}")
     print(f"    Max Handle Dip Allowed (₹) : ₹{p['max_handle_dip']}  "
           f"(= 0.32 × ₹{p['cup_depth']})")
     print(f"    Actual Handle Pullback (₹) : ₹{p['handle_pullback']}  "
           f"({p['handle_pullback_pct']}%)")
-    if p['handle_pullback'] <= p['max_handle_dip']:
-        print(f"    Status                     : ✅ PASS  "
-              f"(₹{p['handle_pullback']} ≤ ₹{p['max_handle_dip']})")
-    else:
-        print(f"    Status                     : ❌ FAIL  "
-              f"(₹{p['handle_pullback']} > ₹{p['max_handle_dip']})")
+    
+    print(f"  ─────────────────────────────────────────────────")
+    print(f"  ✦ ROUNDEDNESS CHECK")
+    roundedness_pass = "✅ PASS" if p.get('roundedness_pct', 0) >= MIN_BASE_CANDLES_PCT * 100 else "❌ FAIL"
+    print(f"    {p.get('base_candles', 'N/A')} candles in base zone out of {p.get('cup_width', 'N/A')} cup candles ({p.get('roundedness_pct', 'N/A')}%) — {roundedness_pass}")
 
     print(f"  ─────────────────────────────────────────────────")
-    print(f"  ✦ DURATION & VALIDATION CHECK")
-    print(f"    Cup Duration (L→B, B→R)    : {p.get('cup_left_duration', 'N/A')} candles, {p.get('cup_right_duration', 'N/A')} candles")
-    print(f"    Handle Duration            : {p.get('handle_duration', 'N/A')} candles")
-    print(f"    Double-Dip Check           : {'✅ PASSED' if p.get('double_dip_passed') else '❌ FAILED'}")
+    print(f"  ✦ PAUSE-BEFORE-BREAKOUT CHECK")
+    pause = p.get('pause_duration', 0)
+    slope = p.get('handle_slope', 0)
+    pause_pass = "✅ PASS" if pause >= MIN_PAUSE_CANDLES and slope <= 0 else "❌ FAIL"
+    print(f"    Breakout Confirmed in      : {pause} candles (Needs ≥ {MIN_PAUSE_CANDLES})")
+    print(f"    Handle Slope               : {slope} — {pause_pass}")
+
+    print(f"  ─────────────────────────────────────────────────")
+    print(f"  ✦ HANDLE LOW")
+    print(f"    OLD (first-dip)            : ₹{p.get('old_handle_low', 'N/A')}")
+    print(f"    NEW (breakout-confirmed)   : ₹{p['handle_low_price']}")
 
     # Show dates if available.
     if "left_rim_date" in p:
@@ -735,6 +836,12 @@ def print_pattern(p, index=1):
         print(f"  📅 Cup Bottom Date : {p['cup_bottom_date']}")
         print(f"  📅 Right Rim Date  : {p['right_rim_date']}")
         print(f"  📅 Handle Low Date : {p['handle_low_date']}")
+
+    print(f"  ─────────────────────────────────────────────────")
+    if p.get("reject_reason"):
+        print(f"  FINAL VERDICT: ❌ REJECTED ({p['reject_reason']})")
+    else:
+        print(f"  FINAL VERDICT: ✅ VALID")
 
     print(f"  {'═' * 60}\n")
 
@@ -808,13 +915,14 @@ def test_with_sample_data():
     handle_down = np.linspace(99.8, 95, 10)
     handle_up = np.linspace(95, 98, 10)
 
-    # 7. Post-handle (a few more candles so the pattern is "complete")
-    post_handle = np.ones(15) * 98
+    # 7. Post-handle (breakout above Right Rim to confirm the pattern)
+    post_handle_breakout = np.linspace(98, 103, 5)
+    post_breakout = np.ones(10) * 103
 
     # Concatenate all segments into one price series.
     synthetic_prices = np.concatenate([
         rise_to_left_rim, descent, bottom, ascent, right_rim,
-        handle_down, handle_up, post_handle
+        handle_down, handle_up, post_handle_breakout, post_breakout
     ])
 
     print(f"  Synthetic series length : {len(synthetic_prices)} candles")
@@ -825,7 +933,7 @@ def test_with_sample_data():
           f"Max handle = ₹{0.32 * 20:.1f}, Actual = ₹5 → PASS")
 
     # Run detection
-    results = detect_cup_and_handle(synthetic_prices, ticker="SYNTHETIC_CUP")
+    results = detect_cup_and_handle(synthetic_prices, ticker="SYNTHETIC_CUP", verbose=True)
 
     if results:
         print(f"\n  ✅ PASS — {len(results)} pattern(s) detected (expected ≥ 1)")
@@ -877,11 +985,12 @@ def test_with_sample_data():
     #   Handle pullback = 100 − 90 = 10.  10 > 6.4 → MUST REJECT ❌
     deep_handle_down = np.linspace(99.8, 90, 10)
     deep_handle_up = np.linspace(90, 95, 10)
-    deep_post_handle = np.ones(15) * 95
+    deep_post_handle_breakout = np.linspace(95, 103, 5)
+    deep_post_breakout = np.ones(10) * 103
 
     deep_handle_prices = np.concatenate([
         rise_to_left_rim, descent, bottom, ascent, right_rim,
-        deep_handle_down, deep_handle_up, deep_post_handle
+        deep_handle_down, deep_handle_up, deep_post_handle_breakout, deep_post_breakout
     ])
 
     print(f"  Synthetic series length : {len(deep_handle_prices)} candles")
@@ -969,11 +1078,13 @@ def run_historical_backtest(tickers=None, period="2y", start=None, end=None, int
         if len(close_prices) < 30:
             continue  # not enough data points
 
+        # If there are only a few tickers, turn on verbose mode to show rejections
+        is_verbose = (len(all_data) <= 5)
+
         # Full sweep — no date restriction.
-        # verbose=False suppresses per-rejection print messages.
         patterns = detect_cup_and_handle(
             close_prices, ticker=ticker, dates=dates,
-            interval=interval, highs=high_prices, verbose=False
+            interval=interval, highs=high_prices, verbose=is_verbose
         )
 
         if patterns:
@@ -1374,7 +1485,7 @@ def prompt_for_config(default_interval="1d", default_period="2y"):
 
 def main():
     """
-    Entry point. Reads the RUN_MODE variable and dispatches accordingl3y.
+    Entry point. Reads the RUN_MODE variable and dispatches accordingly.
 
     Usage
     -----
