@@ -1,0 +1,1394 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description"
+        content="NSE Multi-Pattern Stock Scanner — Professional trading terminal with TradingView charts. Detects Cup & Handle, Bull Flag, Bear Flag, Pennant, Head & Shoulders, Double Top, Double Bottom patterns on Nifty stocks.">
+    <title>NSE Pattern Scanner — Trading Terminal</title>
+
+    <!-- Google Font: Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap"
+        rel="stylesheet">
+
+    <!-- TradingView Lightweight Charts -->
+    <script src="https://unpkg.com/lightweight-charts@3.8.0/dist/lightweight-charts.standalone.production.js"></script>
+
+    <style>
+        /* ================================================================
+           CSS DESIGN SYSTEM — Dark Trading Terminal Theme
+           ================================================================ */
+
+        :root {
+            /* Dark theme (default) */
+            --bg-primary: #0a0e17;
+            --bg-secondary: #111827;
+            --bg-tertiary: #1a2035;
+            --bg-card: rgba(17, 24, 39, 0.85);
+            --bg-hover: rgba(99, 102, 241, 0.1);
+            --border-color: rgba(99, 102, 241, 0.15);
+            --border-active: rgba(99, 102, 241, 0.4);
+            --text-primary: #e5e7eb;
+            --text-secondary: #9ca3af;
+            --text-muted: #6b7280;
+            --accent-primary: #6366f1;
+            --accent-secondary: #818cf8;
+            --accent-gradient: linear-gradient(135deg, #6366f1, #8b5cf6);
+            --green: #22c55e;
+            --green-bg: rgba(34, 197, 94, 0.1);
+            --red: #ef4444;
+            --red-bg: rgba(239, 68, 68, 0.1);
+            --orange: #f59e0b;
+            --orange-bg: rgba(245, 158, 11, 0.1);
+            --blue: #3b82f6;
+            --blue-bg: rgba(59, 130, 246, 0.1);
+            --chart-bg: #0d1117;
+            --glass-bg: rgba(17, 24, 39, 0.65);
+            --glass-border: rgba(99, 102, 241, 0.12);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.4);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.5);
+        }
+
+        .light-mode {
+            --bg-primary: #f8fafc;
+            --bg-secondary: #ffffff;
+            --bg-tertiary: #f1f5f9;
+            --bg-card: rgba(255, 255, 255, 0.9);
+            --bg-hover: rgba(99, 102, 241, 0.06);
+            --border-color: rgba(99, 102, 241, 0.12);
+            --border-active: rgba(99, 102, 241, 0.35);
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --chart-bg: #ffffff;
+            --glass-bg: rgba(255, 255, 255, 0.7);
+            --glass-border: rgba(99, 102, 241, 0.1);
+            --shadow: 0 4px 30px rgba(0, 0, 0, 0.08);
+            --shadow-lg: 0 10px 40px rgba(0, 0, 0, 0.1);
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            background: var(--bg-primary);
+            color: var(--text-primary);
+            overflow: hidden;
+            height: 100vh;
+        }
+
+        /* ── Scrollbar ── */
+        ::-webkit-scrollbar {
+            width: 6px;
+        }
+
+        ::-webkit-scrollbar-track {
+            background: transparent;
+        }
+
+        ::-webkit-scrollbar-thumb {
+            background: var(--border-color);
+            border-radius: 3px;
+        }
+
+        ::-webkit-scrollbar-thumb:hover {
+            background: var(--accent-primary);
+        }
+
+        /* ── Layout ── */
+        .app-container {
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+        }
+
+        /* ── Header ── */
+        .header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 20px;
+            background: var(--bg-secondary);
+            border-bottom: 1px solid var(--border-color);
+            backdrop-filter: blur(12px);
+            z-index: 100;
+            min-height: 52px;
+        }
+
+        .header-left {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+
+        .app-logo {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .app-logo-icon {
+            width: 28px;
+            height: 28px;
+            background: var(--accent-gradient);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+        }
+
+        .app-logo-text {
+            font-weight: 700;
+            font-size: 15px;
+            background: var(--accent-gradient);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        .app-logo-sub {
+            font-size: 10px;
+            color: var(--text-muted);
+            font-weight: 400;
+        }
+
+        .market-badge {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 11px;
+            font-weight: 600;
+            letter-spacing: 0.3px;
+        }
+
+        .market-badge.open {
+            background: var(--green-bg);
+            color: var(--green);
+            border: 1px solid rgba(34, 197, 94, 0.2);
+        }
+
+        .market-badge.closed {
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .market-badge .dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            animation: pulse-dot 2s infinite;
+        }
+
+        .market-badge.open .dot {
+            background: var(--green);
+        }
+
+        .market-badge.closed .dot {
+            background: var(--red);
+            animation: none;
+        }
+
+        @keyframes pulse-dot {
+
+            0%,
+            100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+
+            50% {
+                opacity: 0.4;
+                transform: scale(0.8);
+            }
+        }
+
+        .header-right {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+
+        .header-info {
+            font-size: 11px;
+            color: var(--text-muted);
+            text-align: right;
+        }
+
+        .btn {
+            display: inline-flex;
+            align-items: center;
+            gap: 5px;
+            padding: 6px 14px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-size: 12px;
+            font-family: inherit;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .btn:hover {
+            border-color: var(--accent-primary);
+            background: var(--bg-hover);
+            transform: translateY(-1px);
+        }
+
+        .btn-primary {
+            background: var(--accent-gradient);
+            border: none;
+            color: white;
+            font-weight: 600;
+        }
+
+        .btn-primary:hover {
+            opacity: 0.9;
+            transform: translateY(-1px);
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.3);
+        }
+
+        .btn-icon {
+            padding: 6px 8px;
+            font-size: 14px;
+        }
+
+        /* ── Main Content ── */
+        .main-content {
+            display: flex;
+            flex: 1;
+            overflow: hidden;
+        }
+
+        /* ── Left Panel ── */
+        .left-panel {
+            width: 280px;
+            min-width: 280px;
+            background: var(--bg-secondary);
+            border-right: 1px solid var(--border-color);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .controls-section {
+            padding: 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .control-group {
+            margin-bottom: 10px;
+        }
+
+        .control-label {
+            font-size: 10px;
+            font-weight: 600;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.8px;
+            margin-bottom: 5px;
+        }
+
+        select,
+        input[type="text"] {
+            width: 100%;
+            padding: 7px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            background: var(--bg-tertiary);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 12px;
+            outline: none;
+            transition: border-color 0.2s;
+            appearance: none;
+            -webkit-appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' fill='%239ca3af' viewBox='0 0 16 16'%3E%3Cpath d='M8 11L3 6h10z'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 8px center;
+            padding-right: 28px;
+        }
+
+        select:focus,
+        input[type="text"]:focus {
+            border-color: var(--accent-primary);
+        }
+
+        .scan-btn-container {
+            padding: 0 14px 14px;
+        }
+
+        .scan-btn {
+            width: 100%;
+            padding: 10px;
+            font-size: 13px;
+        }
+
+        /* ── Results List ── */
+        .results-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 10px 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .results-header h3 {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--text-secondary);
+        }
+
+        .results-count {
+            font-size: 11px;
+            color: var(--text-muted);
+            background: var(--bg-tertiary);
+            padding: 2px 8px;
+            border-radius: 10px;
+        }
+
+        .results-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 6px;
+        }
+
+        .result-item {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.15s;
+            border: 1px solid transparent;
+            margin-bottom: 3px;
+        }
+
+        .result-item:hover {
+            background: var(--bg-hover);
+            border-color: var(--border-color);
+        }
+
+        .result-item.active {
+            background: rgba(99, 102, 241, 0.12);
+            border-color: var(--accent-primary);
+        }
+
+        .result-icon {
+            width: 32px;
+            height: 32px;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 14px;
+            flex-shrink: 0;
+        }
+
+        .result-info {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .result-ticker {
+            font-size: 13px;
+            font-weight: 600;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .result-pattern {
+            font-size: 10px;
+            color: var(--text-muted);
+        }
+
+        .result-score {
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--accent-secondary);
+            flex-shrink: 0;
+        }
+
+        /* ── Right Area ── */
+        .right-area {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chart-container {
+            flex: 1;
+            position: relative;
+            min-height: 300px;
+            background: var(--chart-bg);
+        }
+
+        #chart {
+            width: 100%;
+            height: 100%;
+        }
+
+        .chart-overlay-msg {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            text-align: center;
+            color: var(--text-muted);
+        }
+
+        .chart-overlay-msg .icon {
+            font-size: 40px;
+            margin-bottom: 12px;
+        }
+
+        .chart-overlay-msg .title {
+            font-size: 16px;
+            font-weight: 600;
+            margin-bottom: 6px;
+            color: var(--text-secondary);
+        }
+
+        .chart-overlay-msg .subtitle {
+            font-size: 12px;
+        }
+
+        /* ── Detail Panel ── */
+        .detail-panel {
+            height: 220px;
+            min-height: 180px;
+            background: var(--bg-secondary);
+            border-top: 1px solid var(--border-color);
+            overflow-y: auto;
+            padding: 14px 20px;
+            display: none;
+        }
+
+        .detail-panel.visible {
+            display: block;
+        }
+
+        .detail-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .detail-title {
+            font-size: 14px;
+            font-weight: 700;
+        }
+
+        .detail-signal {
+            font-size: 11px;
+            padding: 3px 10px;
+            border-radius: 12px;
+            font-weight: 600;
+        }
+
+        .detail-signal.bullish {
+            background: var(--green-bg);
+            color: var(--green);
+        }
+
+        .detail-signal.bearish {
+            background: var(--red-bg);
+            color: var(--red);
+        }
+
+        .detail-signal.neutral {
+            background: var(--orange-bg);
+            color: var(--orange);
+        }
+
+        .checks-grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            margin-bottom: 14px;
+        }
+
+        .check-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+            padding: 4px 10px;
+            border-radius: 6px;
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        .check-badge.pass {
+            background: var(--green-bg);
+            color: var(--green);
+            border: 1px solid rgba(34, 197, 94, 0.15);
+        }
+
+        .check-badge.fail {
+            background: var(--red-bg);
+            color: var(--red);
+            border: 1px solid rgba(239, 68, 68, 0.15);
+        }
+
+        .check-badge.na {
+            background: var(--bg-tertiary);
+            color: var(--text-muted);
+            border: 1px solid var(--border-color);
+        }
+
+        .key-levels {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 12px;
+            margin-bottom: 14px;
+        }
+
+        .key-level {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+        }
+
+        .key-level-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+        }
+
+        .key-level-label {
+            color: var(--text-muted);
+            font-size: 11px;
+        }
+
+        .key-level-price {
+            font-weight: 600;
+        }
+
+        .quality-bar-container {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            margin-bottom: 14px;
+        }
+
+        .quality-bar-label {
+            font-size: 11px;
+            color: var(--text-muted);
+            font-weight: 500;
+            flex-shrink: 0;
+        }
+
+        .quality-bar-track {
+            flex: 1;
+            height: 6px;
+            background: var(--bg-tertiary);
+            border-radius: 3px;
+            overflow: hidden;
+            max-width: 200px;
+        }
+
+        .quality-bar-fill {
+            height: 100%;
+            border-radius: 3px;
+            background: var(--accent-gradient);
+            transition: width 0.5s ease;
+        }
+
+        .quality-bar-value {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--accent-secondary);
+            flex-shrink: 0;
+        }
+
+        .pattern-description {
+            font-size: 12px;
+            line-height: 1.6;
+            color: var(--text-secondary);
+            padding: 10px 14px;
+            background: var(--bg-tertiary);
+            border-radius: 8px;
+            border-left: 3px solid var(--accent-primary);
+        }
+
+        /* ── Loading Spinner ── */
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(10, 14, 23, 0.7);
+            backdrop-filter: blur(4px);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .spinner-container {
+            text-align: center;
+        }
+
+        .spinner {
+            width: 44px;
+            height: 44px;
+            border: 3px solid var(--border-color);
+            border-top-color: var(--accent-primary);
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin: 0 auto 12px;
+        }
+
+        @keyframes spin {
+            to {
+                transform: rotate(360deg);
+            }
+        }
+
+        .spinner-text {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* ── Error Banner ── */
+        .error-banner {
+            display: none;
+            padding: 12px 20px;
+            background: var(--red-bg);
+            border-bottom: 1px solid rgba(239, 68, 68, 0.2);
+            color: var(--red);
+            font-size: 13px;
+            text-align: center;
+        }
+
+        .error-banner.visible {
+            display: block;
+        }
+
+        /* ── Empty State ── */
+        .empty-state {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+            text-align: center;
+        }
+
+        .empty-state .icon {
+            font-size: 32px;
+            margin-bottom: 10px;
+        }
+
+        .empty-state .text {
+            font-size: 12px;
+        }
+
+        /* ── Sort Control ── */
+        .sort-control {
+            padding: 6px 14px;
+            border-bottom: 1px solid var(--border-color);
+        }
+
+        .sort-control select {
+            font-size: 11px;
+            padding: 4px 8px;
+        }
+    </style>
+</head>
+
+<body>
+    <!-- Loading Spinner -->
+    <div class="loading-overlay" id="loadingOverlay">
+        <div class="spinner-container">
+            <div class="spinner"></div>
+            <div class="spinner-text" id="loadingText">Scanning stocks...</div>
+        </div>
+    </div>
+
+    <div class="app-container">
+        <!-- Error Banner -->
+        <div class="error-banner" id="errorBanner">
+            ⚠️ Backend is not running. Start it with: <code>uvicorn backend.main:app --reload --port 8000</code>
+        </div>
+
+        <!-- Header -->
+        <header class="header">
+            <div class="header-left">
+                <div class="app-logo">
+                    <div class="app-logo-icon">📊</div>
+                    <div>
+                        <div class="app-logo-text">NSE Pattern Scanner</div>
+                        <div class="app-logo-sub">7 Patterns • TradingView Charts</div>
+                    </div>
+                </div>
+                <div class="market-badge closed" id="marketBadge">
+                    <span class="dot"></span>
+                    <span id="marketStatus">Checking...</span>
+                </div>
+            </div>
+            <div class="header-right">
+                <div class="header-info">
+                    <div id="lastScanInfo">No scan yet</div>
+                    <div id="scanStats"></div>
+                </div>
+                <button class="btn btn-icon" id="refreshBtn" title="Refresh scan">🔄</button>
+                <button class="btn btn-icon" id="themeToggle" title="Toggle light/dark mode">🌙</button>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel -->
+            <aside class="left-panel">
+                <div class="controls-section">
+                    <div class="control-group">
+                        <div class="control-label">Pattern</div>
+                        <select id="patternSelect">
+                            <option value="all">All Patterns</option>
+                            <option value="cup_handle">☕ Cup & Handle</option>
+                            <option value="bull_flag">🟢 Bull Flag</option>
+                            <option value="bear_flag">🔴 Bear Flag</option>
+                            <option value="pennant">🔺 Pennant</option>
+                            <option value="head_shoulders">👤 Head & Shoulders</option>
+                            <option value="double_top">🔝 Double Top</option>
+                            <option value="double_bottom">🔽 Double Bottom</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <div class="control-label">Interval</div>
+                        <select id="intervalSelect">
+                            <option value="15m">15 Minutes</option>
+                            <option value="1h">1 Hour</option>
+                            <option value="1d" selected>1 Day</option>
+                            <option value="1wk">1 Week</option>
+                        </select>
+                    </div>
+                    <div class="control-group">
+                        <div class="control-label">Lookback</div>
+                        <select id="lookbackSelect">
+                            <option value="1mo">1 Month</option>
+                            <option value="3mo" selected>3 Months</option>
+                            <option value="6mo">6 Months</option>
+                            <option value="1y">1 Year</option>
+                            <option value="2y">2 Years</option>
+                        </select>
+                    </div>
+                </div>
+
+                <div class="scan-btn-container">
+                    <button class="btn btn-primary scan-btn" id="scanBtn">
+                        🔍 Scan Watchlist
+                    </button>
+                </div>
+
+                <div class="results-header">
+                    <h3>Results</h3>
+                    <span class="results-count" id="resultsCount">0</span>
+                </div>
+
+                <div class="sort-control">
+                    <select id="sortSelect">
+                        <option value="score">Sort: Quality Score ↓</option>
+                        <option value="alpha">Sort: A → Z</option>
+                        <option value="pattern">Sort: Pattern Type</option>
+                    </select>
+                </div>
+
+                <div class="results-list" id="resultsList">
+                    <div class="empty-state">
+                        <div class="icon">🔍</div>
+                        <div class="text">Click "Scan Watchlist" to find patterns</div>
+                    </div>
+                </div>
+            </aside>
+
+            <!-- Right Area -->
+            <div class="right-area">
+                <div class="chart-container">
+                    <div id="chart"></div>
+                    <div class="chart-overlay-msg" id="chartOverlay">
+                        <div class="icon">📈</div>
+                        <div class="title">Select a stock to view its chart</div>
+                        <div class="subtitle">Run a scan first, then click any result</div>
+                    </div>
+                </div>
+
+                <div class="detail-panel" id="detailPanel">
+                    <!-- Filled dynamically by JavaScript -->
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ================================================================
+         JAVASCRIPT — All application logic
+         ================================================================ -->
+    <script>
+        // ──────────────────────────────────────────────────────────
+        //  CONFIGURATION
+        // ──────────────────────────────────────────────────────────
+
+        const API_BASE = 'http://localhost:8000';
+
+        // Pattern icons for the results list
+        const PATTERN_ICONS = {
+            'cup_and_handle': { emoji: '☕', bg: '#312e81' },
+            'bull_flag': { emoji: '🟢', bg: '#14532d' },
+            'bear_flag': { emoji: '🔴', bg: '#7f1d1d' },
+            'pennant': { emoji: '🔺', bg: '#78350f' },
+            'head_and_shoulders': { emoji: '👤', bg: '#1e3a5f' },
+            'double_top': { emoji: '🔝', bg: '#4a1d6a' },
+            'double_bottom': { emoji: '🔽', bg: '#164e63' },
+        };
+
+        // Beginner-friendly descriptions for each pattern
+        const PATTERN_DESCRIPTIONS = {
+            'cup_and_handle': `The Cup and Handle pattern looks like a tea cup on the chart. The price dropped and then slowly recovered (the cup), then pulled back slightly (the handle). Traders often watch for this pattern because it can signal that the stock is about to move higher after the handle phase completes. The quality score reflects how clean the cup shape is and whether volume confirmed the move. This does not guarantee a price increase — it is one of many signals traders use.`,
+            'bull_flag': `The Bull Flag pattern starts with a strong upward move (the "pole") followed by a tight, slightly downward drift (the "flag"). Think of it like a flag on a pole — the pole is the rally, and the flag is a brief pause. Traders watch for a breakout above the flag, which can signal the upward move will continue. The tighter the flag and the stronger the pole, the more reliable this pattern tends to be.`,
+            'bear_flag': `The Bear Flag is the opposite of a Bull Flag. It starts with a sharp drop (the pole) followed by a slight upward drift (the flag — a weak bounce). When the price breaks below the flag, it can signal that the downward move will continue. This is a bearish pattern, meaning it suggests prices may keep falling. Volume typically decreases during the flag and spikes on the breakdown.`,
+            'pennant': `A Pennant looks like a small triangle that forms after a strong price move. The highs get lower and the lows get higher, squeezing the price into a tighter range — like two converging trendlines meeting at a point. The breakout usually happens in the same direction as the original move (the pole). If the pole was upward, expect an upward breakout; if downward, expect a downward breakout.`,
+            'head_and_shoulders': `The Head and Shoulders pattern has three peaks: two smaller ones (the "shoulders") on either side of a taller one (the "head"). It typically forms at the top of an uptrend and signals a reversal to the downside. The "neckline" connects the two low points between the peaks. When the price breaks below the neckline, it confirms the pattern. Declining volume from left shoulder to right shoulder strengthens the signal.`,
+            'double_top': `The Double Top pattern looks like the letter "M" on the chart. The price reaches a high, pulls back, then tries to reach the same high again but fails. This suggests that buyers ran out of steam and the price may reverse downward. When the price breaks below the valley between the two peaks, the pattern is confirmed. It's a bearish reversal signal — meaning the uptrend may be ending.`,
+            'double_bottom': `The Double Bottom pattern looks like the letter "W" on the chart. The price drops to a low, bounces up, then drops to roughly the same low again but holds. This suggests that sellers ran out of steam and the price may reverse upward. When the price breaks above the peak between the two lows, the pattern is confirmed. It's a bullish reversal signal — meaning the downtrend may be ending.`,
+        };
+
+        // ──────────────────────────────────────────────────────────
+        //  STATE
+        // ──────────────────────────────────────────────────────────
+
+        let scanResults = [];       // Current scan results
+        let selectedResult = null;  // Currently selected result
+        let chart = null;           // TradingView chart instance
+        let candleSeries = null;    // Candlestick series
+        let volumeSeries = null;    // Volume histogram series
+        let priceLines = [];        // Current price level lines on chart
+        let isDarkMode = true;      // Theme state
+
+        // ──────────────────────────────────────────────────────────
+        //  DOM REFERENCES
+        // ──────────────────────────────────────────────────────────
+
+        const els = {
+            loadingOverlay: document.getElementById('loadingOverlay'),
+            loadingText: document.getElementById('loadingText'),
+            errorBanner: document.getElementById('errorBanner'),
+            marketBadge: document.getElementById('marketBadge'),
+            marketStatus: document.getElementById('marketStatus'),
+            lastScanInfo: document.getElementById('lastScanInfo'),
+            scanStats: document.getElementById('scanStats'),
+            refreshBtn: document.getElementById('refreshBtn'),
+            themeToggle: document.getElementById('themeToggle'),
+            patternSelect: document.getElementById('patternSelect'),
+            intervalSelect: document.getElementById('intervalSelect'),
+            lookbackSelect: document.getElementById('lookbackSelect'),
+            scanBtn: document.getElementById('scanBtn'),
+            sortSelect: document.getElementById('sortSelect'),
+            resultsList: document.getElementById('resultsList'),
+            resultsCount: document.getElementById('resultsCount'),
+            chartContainer: document.getElementById('chart'),
+            chartOverlay: document.getElementById('chartOverlay'),
+            detailPanel: document.getElementById('detailPanel'),
+        };
+
+        // ──────────────────────────────────────────────────────────
+        //  UTILITY FUNCTIONS
+        // ──────────────────────────────────────────────────────────
+
+        function showLoading(text) {
+            els.loadingText.textContent = text || 'Loading...';
+            els.loadingOverlay.classList.add('active');
+        }
+
+        function hideLoading() {
+            els.loadingOverlay.classList.remove('active');
+        }
+
+        function showError(msg) {
+            els.errorBanner.textContent = '⚠️ ' + msg;
+            els.errorBanner.classList.add('visible');
+        }
+
+        function hideError() {
+            els.errorBanner.classList.remove('visible');
+        }
+
+        function formatPrice(price) {
+            if (price == null) return '—';
+            return '₹' + Number(price).toLocaleString('en-IN', {
+                minimumFractionDigits: 2,
+                maximumFractionDigits: 2
+            });
+        }
+
+        // ──────────────────────────────────────────────────────────
+        //  API CALLS (using fetch + async/await)
+        // ──────────────────────────────────────────────────────────
+
+        async function apiGet(endpoint) {
+            const response = await fetch(API_BASE + endpoint);
+            if (!response.ok) {
+                const errorData = await response.json().catch(() => ({}));
+                throw new Error(errorData.detail || `HTTP ${response.status}`);
+            }
+            return await response.json();
+        }
+
+        async function checkHealth() {
+            try {
+                await apiGet('/api/health');
+                hideError();
+                return true;
+            } catch (e) {
+                showError('Backend is not running. Start it with: uvicorn backend.main:app --reload --port 8000');
+                return false;
+            }
+        }
+
+        async function fetchMarketStatus() {
+            try {
+                const data = await apiGet('/api/market_status');
+                const badge = els.marketBadge;
+                const statusText = els.marketStatus;
+
+                if (data.is_open) {
+                    badge.className = 'market-badge open';
+                    statusText.textContent = 'MARKET OPEN';
+                } else {
+                    badge.className = 'market-badge closed';
+                    statusText.textContent = 'MARKET CLOSED';
+                }
+
+                badge.title = data.status + ' • ' + data.next_event;
+            } catch (e) {
+                els.marketStatus.textContent = 'Unknown';
+            }
+        }
+
+        async function runScan() {
+            const pattern = els.patternSelect.value;
+            const interval = els.intervalSelect.value;
+            const lookback = els.lookbackSelect.value;
+
+            showLoading(`Scanning ${pattern === 'all' ? 'all patterns' : pattern} on Nifty stocks...`);
+
+            try {
+                const data = await apiGet(
+                    `/api/scan?pattern=${pattern}&interval=${interval}&lookback=${lookback}`
+                );
+
+                scanResults = data.matches || [];
+                renderResults();
+
+                // Update header info
+                const scanTime = new Date(data.scan_time);
+                els.lastScanInfo.textContent = `Last scan: ${scanTime.toLocaleTimeString()}`;
+                els.scanStats.textContent =
+                    `${data.total_scanned} scanned • ${scanResults.length} found • ${data.scan_duration_seconds}s` +
+                    (data.from_cache ? ' (cached)' : '');
+
+            } catch (e) {
+                showError('Scan failed: ' + e.message);
+            } finally {
+                hideLoading();
+            }
+        }
+
+        async function loadCandles(ticker, interval, lookback) {
+            showLoading(`Loading chart for ${ticker}...`);
+
+            try {
+                const data = await apiGet(
+                    `/api/candles?ticker=${encodeURIComponent(ticker)}&interval=${interval}&lookback=${lookback}`
+                );
+                return data;
+            } catch (e) {
+                showError('Failed to load candles: ' + e.message);
+                return null;
+            } finally {
+                hideLoading();
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────
+        //  RESULTS LIST RENDERING
+        // ──────────────────────────────────────────────────────────
+
+        function renderResults() {
+            const sorted = sortResults([...scanResults]);
+            els.resultsCount.textContent = sorted.length;
+
+            if (sorted.length === 0) {
+                els.resultsList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <div class="text">No patterns found with current settings.<br>Try a different interval or lookback period.</div>
+                    </div>`;
+                return;
+            }
+
+            els.resultsList.innerHTML = sorted.map((result, i) => {
+                const icon = PATTERN_ICONS[result.pattern_type] || { emoji: '📊', bg: '#333' };
+                const isActive = selectedResult && selectedResult.ticker === result.ticker &&
+                    selectedResult.pattern_type === result.pattern_type;
+                return `
+                    <div class="result-item ${isActive ? 'active' : ''}"
+                         onclick="selectResult(${i})" data-index="${i}">
+                        <div class="result-icon" style="background:${icon.bg}">${icon.emoji}</div>
+                        <div class="result-info">
+                            <div class="result-ticker">${result.ticker.replace('.NS', '')}</div>
+                            <div class="result-pattern">${result.pattern}</div>
+                        </div>
+                        <div class="result-score">${result.quality_score}</div>
+                    </div>`;
+            }).join('');
+        }
+
+        function sortResults(results) {
+            const sortBy = els.sortSelect.value;
+            if (sortBy === 'score') {
+                results.sort((a, b) => b.quality_score - a.quality_score);
+            } else if (sortBy === 'alpha') {
+                results.sort((a, b) => a.ticker.localeCompare(b.ticker));
+            } else if (sortBy === 'pattern') {
+                results.sort((a, b) => a.pattern.localeCompare(b.pattern));
+            }
+            return results;
+        }
+
+        // ──────────────────────────────────────────────────────────
+        //  CHART — TradingView Lightweight Charts
+        // ──────────────────────────────────────────────────────────
+
+        function getChartOptions() {
+            return {
+                layout: {
+                    background: { color: isDarkMode ? '#0d1117' : '#ffffff' },
+                    textColor: isDarkMode ? '#9ca3af' : '#64748b',
+                    fontFamily: 'Inter, sans-serif',
+                    fontSize: 11,
+                },
+                grid: {
+                    vertLines: { color: isDarkMode ? 'rgba(99,102,241,0.06)' : 'rgba(99,102,241,0.06)' },
+                    horzLines: { color: isDarkMode ? 'rgba(99,102,241,0.06)' : 'rgba(99,102,241,0.06)' },
+                },
+                crosshair: {
+                    mode: 0,
+                    vertLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
+                    horzLine: { color: 'rgba(99,102,241,0.3)', width: 1, style: 2 },
+                },
+                rightPriceScale: {
+                    borderColor: isDarkMode ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.1)',
+                    scaleMargins: { top: 0.1, bottom: 0.25 },
+                },
+                timeScale: {
+                    borderColor: isDarkMode ? 'rgba(99,102,241,0.12)' : 'rgba(99,102,241,0.1)',
+                    timeVisible: true,
+                    secondsVisible: false,
+                },
+                handleScroll: true,
+                handleScale: true,
+            };
+        }
+
+        function initChart() {
+            if (chart) {
+                chart.remove();
+            }
+
+            chart = LightweightCharts.createChart(els.chartContainer, getChartOptions());
+
+            // Candlestick series
+            candleSeries = chart.addCandlestickSeries({
+                upColor: '#22c55e',
+                downColor: '#ef4444',
+                borderDownColor: '#ef4444',
+                borderUpColor: '#22c55e',
+                wickDownColor: '#ef4444',
+                wickUpColor: '#22c55e',
+            });
+
+            // Volume histogram
+            volumeSeries = chart.addHistogramSeries({
+                color: '#6366f1',
+                priceFormat: { type: 'volume' },
+                priceScaleId: '',
+            });
+
+            volumeSeries.priceScale().applyOptions({
+                scaleMargins: { top: 0.85, bottom: 0 },
+            });
+
+            // Resize handler
+            const resizeObserver = new ResizeObserver(() => {
+                if (chart) {
+                    chart.applyOptions({
+                        width: els.chartContainer.clientWidth,
+                        height: els.chartContainer.clientHeight,
+                    });
+                }
+            });
+            resizeObserver.observe(els.chartContainer);
+        }
+
+        function setChartData(candlesData) {
+            if (!chart || !candleSeries || !candlesData || candlesData.length === 0) return;
+
+            // Clear previous price lines
+            priceLines.forEach(line => {
+                try { candleSeries.removePriceLine(line); } catch (e) { }
+            });
+            priceLines = [];
+
+            // Set candle data
+            const ohlc = candlesData.map(c => ({
+                time: c.time,
+                open: c.open,
+                high: c.high,
+                low: c.low,
+                close: c.close,
+            }));
+            candleSeries.setData(ohlc);
+
+            // Set volume data
+            const vol = candlesData.map(c => ({
+                time: c.time,
+                value: c.volume,
+                color: c.close >= c.open
+                    ? 'rgba(34,197,94,0.25)'
+                    : 'rgba(239,68,68,0.25)',
+            }));
+            volumeSeries.setData(vol);
+
+            // Fit content
+            chart.timeScale().fitContent();
+
+            // Hide overlay
+            els.chartOverlay.style.display = 'none';
+        }
+
+        function addPatternMarkers(keyLevels, candlesData) {
+            if (!candleSeries || !keyLevels || keyLevels.length === 0) return;
+
+            // Clear old price lines
+            priceLines.forEach(line => {
+                try { candleSeries.removePriceLine(line); } catch (e) { }
+            });
+            priceLines = [];
+
+            // Add horizontal price lines for each key level
+            keyLevels.forEach(level => {
+                if (level.price == null) return;
+
+                const priceLine = candleSeries.createPriceLine({
+                    price: level.price,
+                    color: level.color,
+                    lineWidth: 1,
+                    lineStyle: 2, // Dashed
+                    axisLabelVisible: true,
+                    title: `${level.label} ₹${Number(level.price).toLocaleString('en-IN')}`,
+                });
+                priceLines.push(priceLine);
+            });
+
+            // Add markers at key dates on the candlestick series
+            const markers = [];
+            keyLevels.forEach(level => {
+                if (!level.date) return;
+
+                // Find the candle time matching this date
+                const matchingCandle = candlesData.find(c => {
+                    const candleDate = typeof c.time === 'string' ? c.time : '';
+                    return candleDate === level.date;
+                });
+
+                if (matchingCandle) {
+                    markers.push({
+                        time: matchingCandle.time,
+                        position: level.price > (candlesData[Math.floor(candlesData.length / 2)]?.close || 0) ? 'aboveBar' : 'belowBar',
+                        color: level.color,
+                        shape: 'circle',
+                        text: level.label,
+                    });
+                }
+            });
+
+            if (markers.length > 0) {
+                // Sort markers by time (required by the library)
+                markers.sort((a, b) => {
+                    if (typeof a.time === 'string' && typeof b.time === 'string') {
+                        return a.time.localeCompare(b.time);
+                    }
+                    return a.time - b.time;
+                });
+                candleSeries.setMarkers(markers);
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────
+        //  DETAIL PANEL
+        // ──────────────────────────────────────────────────────────
+
+        function renderDetailPanel(result) {
+            const panel = els.detailPanel;
+            panel.classList.add('visible');
+
+            // Determine signal class
+            const signal = result.signal || '';
+            let signalClass = 'neutral';
+            if (signal.toLowerCase().includes('bullish')) signalClass = 'bullish';
+            if (signal.toLowerCase().includes('bearish')) signalClass = 'bearish';
+
+            // Build checks HTML
+            const checksHTML = (result.checks || []).map(check => {
+                const statusClass = check.status === 'PASS' ? 'pass' :
+                    check.status === 'FAIL' ? 'fail' : 'na';
+                const icon = check.status === 'PASS' ? '✅' :
+                    check.status === 'FAIL' ? '❌' : '➖';
+                return `<span class="check-badge ${statusClass}" title="${check.detail || ''}">${icon} ${check.name}</span>`;
+            }).join('');
+
+            // Build key levels HTML
+            const levelsHTML = (result.key_levels || []).map(level => {
+                return `
+                    <div class="key-level">
+                        <div class="key-level-dot" style="background:${level.color}"></div>
+                        <span class="key-level-label">${level.label}:</span>
+                        <span class="key-level-price">${formatPrice(level.price)}</span>
+                    </div>`;
+            }).join('');
+
+            // Quality score bar (normalize: C&H scores are 0-80, others 0-10)
+            const maxScore = result.pattern_type === 'cup_and_handle' ? 80 : 10;
+            const scorePct = Math.min(100, (result.quality_score / maxScore) * 100);
+
+            // Pattern description
+            const description = PATTERN_DESCRIPTIONS[result.pattern_type] || '';
+
+            panel.innerHTML = `
+                <div class="detail-header">
+                    <div class="detail-title">${result.ticker.replace('.NS', '')} — ${result.pattern}</div>
+                    <span class="detail-signal ${signalClass}">${signal}</span>
+                </div>
+
+                <div class="quality-bar-container">
+                    <span class="quality-bar-label">Quality Score</span>
+                    <div class="quality-bar-track">
+                        <div class="quality-bar-fill" style="width:${scorePct}%"></div>
+                    </div>
+                    <span class="quality-bar-value">${result.quality_score}</span>
+                </div>
+
+                <div class="checks-grid">${checksHTML}</div>
+
+                <div class="key-levels">${levelsHTML}</div>
+
+                ${description ? `<div class="pattern-description">💡 <strong>What this means:</strong> ${description}</div>` : ''}
+            `;
+        }
+
+        // ──────────────────────────────────────────────────────────
+        //  EVENT HANDLERS
+        // ──────────────────────────────────────────────────────────
+
+        async function selectResult(index) {
+            const sorted = sortResults([...scanResults]);
+            const result = sorted[index];
+            if (!result) return;
+
+            selectedResult = result;
+
+            // Highlight active item
+            document.querySelectorAll('.result-item').forEach((el, i) => {
+                el.classList.toggle('active', i === index);
+            });
+
+            // Load candles
+            const interval = els.intervalSelect.value;
+            const lookback = els.lookbackSelect.value;
+            const data = await loadCandles(result.ticker, interval, lookback);
+
+            if (data && data.candles && data.candles.length > 0) {
+                setChartData(data.candles);
+                addPatternMarkers(result.key_levels, data.candles);
+            }
+
+            // Show detail panel
+            renderDetailPanel(result);
+        }
+
+        // Make selectResult globally accessible for onclick
+        window.selectResult = selectResult;
+
+        // ──────────────────────────────────────────────────────────
+        //  THEME TOGGLE
+        // ──────────────────────────────────────────────────────────
+
+        function toggleTheme() {
+            isDarkMode = !isDarkMode;
+            document.body.classList.toggle('light-mode', !isDarkMode);
+            els.themeToggle.textContent = isDarkMode ? '🌙' : '☀️';
+
+            // Re-apply chart theme
+            if (chart) {
+                chart.applyOptions(getChartOptions());
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────
+        //  INITIALIZATION
+        // ──────────────────────────────────────────────────────────
+
+        async function init() {
+            // Attach event listeners
+            els.scanBtn.addEventListener('click', runScan);
+            els.refreshBtn.addEventListener('click', runScan);
+            els.themeToggle.addEventListener('click', toggleTheme);
+            els.sortSelect.addEventListener('change', renderResults);
+
+            // Initialize chart
+            initChart();
+
+            // Check backend health
+            const isHealthy = await checkHealth();
+            if (!isHealthy) return;
+
+            // Fetch market status
+            await fetchMarketStatus();
+
+            // Auto-refresh market status every 60 seconds
+            setInterval(fetchMarketStatus, 60000);
+
+            // Auto-run default scan
+            await runScan();
+        }
+
+        // Start the app when the page loads
+        init();
+    </script>
+</body>
+
+</html>

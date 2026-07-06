@@ -122,6 +122,7 @@ MIN_BASE_CANDLES_PCT = 0.20   # At least 20% of cup candles must be in base zone
 BREAKOUT_CONFIRM_CANDLES = 3          # Consecutive closes above Right Rim
 MAX_HANDLE_LOOKFORWARD_CANDLES = 30   # Max candles to search for breakout
 
+
 # Bug 3 — Genuine Pause Before Breakout
 MIN_PAUSE_CANDLES = 5
 
@@ -168,6 +169,7 @@ def get_nifty_list():
     3. Appends ".NS" so Yahoo Finance knows it's an NSE stock.
     4. Falls back to hardcoded Nifty 50 if all URLs fail.
     """
+    
     csv_urls = [
         "https://archives.nseindia.com/content/indices/ind_nifty200list.csv",
         "https://archives.nseindia.com/content/indices/ind_nifty100list.csv",
