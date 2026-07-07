@@ -35,10 +35,7 @@ This project downloads data dynamically from Yahoo Finance, applies price smooth
 │   ├── main.py           # FastAPI application & entry points
 │   └── scanner.py        # Adapter connecting backend to detector engine
 ├── frontend/
-│   ├── index.html        # Interactive Trading Terminal dashboard
-│   ├── script.js         # Charts initialization and API consumption
-│   └── styles.css        # Clean UI styling
-├── cup_and_handle_detector.py # Legacy standalone detector
+│   └── index.html        # Interactive Trading Terminal dashboard (single-file UI)
 ├── pattern_scanner.py         # Main multi-pattern scanner engine (v3.0)
 ├── requirements.txt           # Python dependencies
 ├── README.md                  # This file
@@ -57,7 +54,7 @@ This project downloads data dynamically from Yahoo Finance, applies price smooth
 1. Clone the repository to your local system:
    ```bash
    git clone <your-repository-url>
-   cd "Cup and Handle pattern detector"
+   cd nse-pattern-scanner
    ```
 
 2. Install dependencies:
@@ -74,9 +71,9 @@ You can run the suite either as a Command Line Interface (CLI) tool or as a Web 
 ### Option A: Interactive Web UI (Highly Recommended)
 Launch the FastAPI web server to run scans, view watchlists, and see interactive charts:
 ```bash
-uvicorn backend.main:app --reload --port 8000
+python -m uvicorn backend.main:app --reload --port 8001
 ```
-Open **`http://localhost:8000`** in your web browser. 
+Open **`http://localhost:8001`** in your web browser. 
 
 * *Features:* Interactive list of Nifty tickers, instant scanner configurations, custom lookbacks/intervals, and interactive TradingView charts showing exact pattern markers.
 

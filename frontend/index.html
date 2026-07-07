@@ -852,7 +852,7 @@
         //  CONFIGURATION
         // ──────────────────────────────────────────────────────────
 
-        const API_BASE = 'http://localhost:8000';
+        const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:8001' : '';
 
         // Pattern icons for the results list
         const PATTERN_ICONS = {
