@@ -196,6 +196,7 @@ PATTERN_SIGNALS = {
 
 # ─── LIVE-MODE DEDUPLICATION CACHE ─────────────────────────────────────────
 _live_alerted_today = set()   # set of (ticker, pattern_type) tuples
+_live_forming_state = {}      # (ticker, pattern_type) -> stage string
 _live_alert_date = None
 
 
@@ -488,9 +489,12 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
 
     # ── Step 2: Try every combination of (Left Rim, Right Rim) ──
     for i in range(len(peak_indices)):
-        for j in range(i + 1, len(peak_indices)):
+        for j in range(i + 1, len(peak_indices) + 1):
             left_rim_idx = peak_indices[i]
-            right_rim_idx = peak_indices[j]
+            if j < len(peak_indices):
+                right_rim_idx = peak_indices[j]
+            else:
+                right_rim_idx = len(prices) - 1
 
             left_rim_price = prices[left_rim_idx]
             right_rim_price = prices[right_rim_idx]
@@ -556,8 +560,13 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
 
             # ── Recovery check ──
             recovery_pct = abs(right_rim_price - left_rim_price) / left_rim_price * 100
+            is_stage_a = False
+            
             if recovery_pct > MAX_RECOVERY_GAP_PCT:
-                continue
+                if j == len(peak_indices) and right_rim_price < left_rim_price * 0.95 and cup_bottom_idx > left_rim_idx:
+                    is_stage_a = True
+                else:
+                    continue
 
             # ── Handle detection (Bug 2/3 Fix) ──
             if right_rim_idx + 1 >= len(prices):
@@ -680,8 +689,14 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             # ── Determine validity ──
             is_valid = True
             reject_reason = ""
+            status = "confirmed"
+            stage = ""
 
-            if max_internal_close > left_rim_price:
+            if is_stage_a:
+                is_valid = False
+                status = "forming"
+                stage = "Stage A - Cup forming: Left rim identified, price has declined and is curving back up"
+            elif max_internal_close > left_rim_price:
                 is_valid = False
                 reject_reason = (f"Internal close (₹{max_internal_close:.2f}) exceeded "
                                  f"Left Rim close (₹{left_rim_price:.2f}).")
@@ -705,6 +720,11 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
                 reject_reason = "Handle pullback too small (<1%)."
             elif not breakout_confirmed:
                 is_valid = False
+                status = "forming"
+                if handle_duration < MIN_HANDLE_CANDLES:
+                    stage = "Stage B - Cup formed, base building: Price has recovered to right rim, rounded bottom confirmed"
+                else:
+                    stage = "Stage C - Handle forming: Price pulling back from right rim in a shallow retracement"
                 reject_reason = (f"No breakout confirmed within "
                                  f"{MAX_HANDLE_LOOKFORWARD_CANDLES} candles.")
             elif pause_duration < MIN_PAUSE_CANDLES:
@@ -734,7 +754,7 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
                     is_valid = False
                     reject_reason = "Right rim is too spiky (failed stability check)."
 
-            if not is_valid and not verbose:
+            if not is_valid and status != "forming" and not verbose:
                 continue
 
             # ── Build pattern dict ──
@@ -767,6 +787,8 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
                 "pause_duration":      int(pause_duration),
                 "handle_slope":        round(float(handle_slope), 4),
                 "reject_reason":       reject_reason,
+                "status":              status,
+                "stage":               stage,
                 "quality_score":       quality_score if is_valid else 0,
                 "vol_decline_avg":     round(float(vol_decline_avg), 0),
                 "vol_sma50":           round(float(vol_sma50), 0),
@@ -857,7 +879,8 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     candidates = []
 
     for pole_end_idx in potential_pole_ends:
-        if pole_end_idx >= n - MIN_FLAG_CANDLES - 1:
+        is_stage_a = (pole_end_idx == n - 1)
+        if pole_end_idx >= n - MIN_FLAG_CANDLES - 1 and not is_stage_a:
             continue
 
         # Find the best pole for this pole_end position
@@ -896,10 +919,31 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
         if best_pole is None:
             continue
 
-        # Look for flag after pole
+        status = "confirmed"
+        stage = ""
+        breakout_idx = None
+        flag_low = prices[pole_end_idx]
+        flag_high = prices[pole_end_idx]
+        flag_range_pct = 0
+        flag_res = type('obj', (object,), {'slope': 0})()
+        retracement_pct = 0
+        flag_start = pole_end_idx
+        flag_end = pole_end_idx
+        vol_flag_pass = None
+        vol_breakout_pass = None
+
+        if is_stage_a:
+            status = "forming"
+            stage = "Stage A - Flagpole forming: Sharp upward move detected, still in progress"
+            breakout_idx = n - 1
+            # Skip the flag loop entirely
+        else:
+            # Look for flag after pole
+            pass
+
         pole_top_price = prices[pole_end_idx]
 
-        for flag_len in range(MIN_FLAG_CANDLES, min(MAX_FLAG_CANDLES + 1, n - pole_end_idx)):
+        for flag_len in range(MIN_FLAG_CANDLES, min(MAX_FLAG_CANDLES + 1, n - pole_end_idx)) if not is_stage_a else []:
             flag_start = pole_end_idx + 1
             flag_end = pole_end_idx + flag_len
             if flag_end >= n:
@@ -942,10 +986,15 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                     break
 
             if breakout_idx is None:
-                if verbose:
-                    print(f"  ❌ {ticker}: Bull Flag pole found (idx {best_pole['start_idx']}-"
-                          f"{pole_end_idx}, +{best_pole['rise_pct']:.1f}%) but no breakout.")
-                continue
+                if flag_end == n - 1:
+                    status = "forming"
+                    stage = "Stage B - Flag channel forming: Flagpole has paused, price consolidating"
+                    breakout_idx = n - 1
+                else:
+                    if verbose:
+                        print(f"  ❌ {ticker}: Bull Flag pole found (idx {best_pole['start_idx']}-"
+                              f"{pole_end_idx}, +{best_pole['rise_pct']:.1f}%) but no breakout.")
+                    continue
 
             # Volume checks
             vol_sma50 = 0
@@ -988,6 +1037,8 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 "ticker":             ticker,
                 "verdict":            "VALID",
                 "reject_reason":      "",
+                "status":             status,
+                "stage":              stage,
                 "pole_start_price":   round(float(prices[best_pole["start_idx"]]), 2),
                 "pole_top_price":     round(float(pole_top_price), 2),
                 "flag_low_price":     round(float(flag_low), 2),
@@ -1075,7 +1126,8 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     candidates = []
 
     for pole_end_idx in potential_pole_ends:
-        if pole_end_idx >= n - MIN_FLAG_CANDLES - 1:
+        is_stage_a = (pole_end_idx == n - 1)
+        if pole_end_idx >= n - MIN_FLAG_CANDLES - 1 and not is_stage_a:
             continue
 
         best_pole = None
@@ -1113,9 +1165,29 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
         if best_pole is None:
             continue
 
+        status = "confirmed"
+        stage = ""
+        breakdown_idx = None
+        flag_low = prices[pole_end_idx]
+        flag_high = prices[pole_end_idx]
+        flag_range_pct = 0
+        flag_res = type('obj', (object,), {'slope': 0})()
+        retracement_pct = 0
+        flag_start = pole_end_idx
+        flag_end = pole_end_idx
+        vol_flag_pass = None
+        vol_breakdown_pass = None
+
+        if is_stage_a:
+            status = "forming"
+            stage = "Stage A - Flagpole forming: Sharp downward move detected, still in progress"
+            breakdown_idx = n - 1
+        else:
+            pass
+
         pole_bottom_price = prices[pole_end_idx]
 
-        for flag_len in range(MIN_FLAG_CANDLES, min(MAX_FLAG_CANDLES + 1, n - pole_end_idx)):
+        for flag_len in range(MIN_FLAG_CANDLES, min(MAX_FLAG_CANDLES + 1, n - pole_end_idx)) if not is_stage_a else []:
             flag_start = pole_end_idx + 1
             flag_end = pole_end_idx + flag_len
             if flag_end >= n:
@@ -1158,7 +1230,12 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                     break
 
             if breakdown_idx is None:
-                continue
+                if flag_end == n - 1:
+                    status = "forming"
+                    stage = "Stage B - Flag channel forming: Flagpole has paused, price consolidating"
+                    breakdown_idx = n - 1
+                else:
+                    continue
 
             # Volume checks
             vol_sma50 = 0
@@ -1200,6 +1277,8 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 "ticker":             ticker,
                 "verdict":            "VALID",
                 "reject_reason":      "",
+                "status":             status,
+                "stage":              stage,
                 "pole_start_price":   round(float(prices[best_pole["start_idx"]]), 2),
                 "pole_bottom_price":  round(float(pole_bottom_price), 2),
                 "flag_high_price":    round(float(flag_high), 2),
@@ -1280,7 +1359,10 @@ def detect_pennant(prices, volumes=None, ticker="UNKNOWN", dates=None,
 
     candidates = []
 
-    for pole_end_idx in range(MAX_POLE_CANDLES, n - MIN_PENNANT_CANDLES - 1):
+    for pole_end_idx in range(MAX_POLE_CANDLES, n):
+        is_stage_a = (pole_end_idx == n - 1)
+        if pole_end_idx >= n - MIN_PENNANT_CANDLES - 1 and not is_stage_a:
+            continue
         # Try both bullish and bearish poles
         best_pole = None
         pole_direction = None  # "bullish" or "bearish"
@@ -1324,12 +1406,28 @@ def detect_pennant(prices, volumes=None, ticker="UNKNOWN", dates=None,
         if best_pole is None:
             continue
 
+        status = "confirmed"
+        stage = ""
+        breakout_idx = None
+        upper_slope = 0
+        lower_slope = 0
+        convergence_ratio = 1
+        vol_pennant_pass = None
+        vol_breakout_pass = None
+
+        if is_stage_a:
+            status = "forming"
+            stage = "Stage A - Flagpole forming: Sharp directional move detected, still in progress"
+            breakout_idx = n - 1
+        else:
+            pass
+
         # Look for pennant body after pole
-        max_pennant_len = min(MAX_FLAG_CANDLES, n - pole_end_idx - 2)
+        max_pennant_len = min(MAX_FLAG_CANDLES, n - pole_end_idx)
         if max_pennant_len < MIN_PENNANT_CANDLES:
             continue
 
-        for plen in range(MIN_PENNANT_CANDLES, max_pennant_len + 1):
+        for plen in range(MIN_PENNANT_CANDLES, max_pennant_len + 1) if not is_stage_a else []:
             pennant_start = pole_end_idx + 1
             pennant_end = pole_end_idx + plen
             if pennant_end >= n:
@@ -1380,7 +1478,12 @@ def detect_pennant(prices, volumes=None, ticker="UNKNOWN", dates=None,
                     break
 
             if breakout_idx is None:
-                continue
+                if pennant_end == n - 1:
+                    status = "forming"
+                    stage = "Stage B - Pennant converging: Post-flagpole consolidation, trendlines converging"
+                    breakout_idx = n - 1
+                else:
+                    continue
 
             # Volume checks
             vol_sma50 = 0
@@ -1418,6 +1521,8 @@ def detect_pennant(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 "ticker":             ticker,
                 "verdict":            "VALID",
                 "reject_reason":      "",
+                "status":             status,
+                "stage":              stage,
                 "direction":          pole_direction,
                 "pole_start_price":   round(float(prices[best_pole["start_idx"]]), 2),
                 "pole_end_price":     round(float(prices[pole_end_idx]), 2),
@@ -1515,147 +1620,168 @@ def detect_head_and_shoulders(prices, volumes=None, ticker="UNKNOWN",
     candidates = []
 
     # Try every triplet of consecutive peaks
-    for i in range(len(peak_indices) - 2):
+    for i in range(len(peak_indices) - 1):
         ls_idx = peak_indices[i]       # Left Shoulder
         head_idx = peak_indices[i + 1]  # Head
-        rs_idx = peak_indices[i + 2]    # Right Shoulder
+        rs_candidates = []
+        if i + 2 < len(peak_indices):
+            rs_candidates.append((peak_indices[i + 2], False))
+        if head_idx >= n - 40:
+            rs_candidates.append((n - 1, True))
+        for rs_idx, is_forming_rs in rs_candidates:
 
-        ls_price = prices[ls_idx]
-        head_price = prices[head_idx]
-        rs_price = prices[rs_idx]
+            ls_price = prices[ls_idx]
+            head_price = prices[head_idx]
+            rs_price = prices[rs_idx]
 
-        # Duration check
-        span = rs_idx - ls_idx
-        if span < MIN_HS_CANDLES:
-            continue
+            # Duration check
+            span = rs_idx - ls_idx
+            if span < MIN_HS_CANDLES:
+                continue
 
-        # Head must be higher than both shoulders
-        ls_prominence = (head_price - ls_price) / ls_price * 100
-        rs_prominence = (head_price - rs_price) / rs_price * 100
+            # Head must be higher than both shoulders
+            ls_prominence = (head_price - ls_price) / ls_price * 100
+            rs_prominence = (head_price - rs_price) / rs_price * 100
 
-        if ls_prominence < HEAD_SHOULDER_RATIO or rs_prominence < HEAD_SHOULDER_RATIO:
-            continue
+            if ls_prominence < HEAD_SHOULDER_RATIO or rs_prominence < HEAD_SHOULDER_RATIO:
+                continue
 
-        # Shoulder symmetry
-        shoulder_diff_pct = abs(ls_price - rs_price) / ls_price * 100
-        if shoulder_diff_pct > SHOULDER_SYMMETRY_PCT:
-            continue
+            # Shoulder symmetry
+            shoulder_diff_pct = abs(ls_price - rs_price) / ls_price * 100
+            if shoulder_diff_pct > SHOULDER_SYMMETRY_PCT:
+                if is_forming_rs:
+                    pass # Still forming, might be Stage C
+                else:
+                    continue
 
-        # Find neckline troughs
-        left_troughs = [t for t in trough_indices if ls_idx < t < head_idx]
-        right_troughs = [t for t in trough_indices if head_idx < t < rs_idx]
+            # Find neckline troughs
+            left_troughs = [t for t in trough_indices if ls_idx < t < head_idx]
+            right_troughs = [t for t in trough_indices if head_idx < t < rs_idx]
 
-        if not left_troughs or not right_troughs:
-            continue
+            if not left_troughs or not right_troughs:
+                continue
 
-        # Use deepest trough in each gap
-        left_neck_idx = min(left_troughs, key=lambda t: prices[t])
-        right_neck_idx = min(right_troughs, key=lambda t: prices[t])
-        left_neck_price = prices[left_neck_idx]
-        right_neck_price = prices[right_neck_idx]
+            # Use deepest trough in each gap
+            left_neck_idx = min(left_troughs, key=lambda t: prices[t])
+            right_neck_idx = min(right_troughs, key=lambda t: prices[t])
+            left_neck_price = prices[left_neck_idx]
+            right_neck_price = prices[right_neck_idx]
 
-        # Neckline slope
-        neck_span = right_neck_idx - left_neck_idx
-        if neck_span <= 0:
-            continue
-        neckline_slope = (right_neck_price - left_neck_price) / neck_span
-        neckline_slope_pct = abs(right_neck_price - left_neck_price) / left_neck_price * 100
+            # Neckline slope
+            neck_span = right_neck_idx - left_neck_idx
+            if neck_span <= 0:
+                continue
+            neckline_slope = (right_neck_price - left_neck_price) / neck_span
+            neckline_slope_pct = abs(right_neck_price - left_neck_price) / left_neck_price * 100
 
-        # Breakdown check: price closes below neckline after right shoulder
-        breakdown_idx = None
-        for k in range(rs_idx + 1, min(n, rs_idx + 30)):
-            # Projected neckline level at position k
-            neckline_at_k = left_neck_price + neckline_slope * (k - left_neck_idx)
-            if prices[k] < neckline_at_k:
-                breakdown_idx = k
-                break
+            # Breakdown check: price closes below neckline after right shoulder
+            breakdown_idx = None
+            for k in range(rs_idx + 1, min(n, rs_idx + 30)):
+                # Projected neckline level at position k
+                neckline_at_k = left_neck_price + neckline_slope * (k - left_neck_idx)
+                if prices[k] < neckline_at_k:
+                    breakdown_idx = k
+                    break
 
-        if breakdown_idx is None:
-            continue
+            status = "confirmed"
+            stage = ""
+            if breakdown_idx is None:
+                if is_stage_b and similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
+                    status = "forming"
+                    stage = "Stage B - Approaching second peak: Price rallying back up toward first peak"
+                    breakdown_idx = n - 1
+                elif not is_stage_b or (is_stage_b and similarity_pct <= DOUBLE_TOP_SIMILARITY_PCT):
+                    status = "forming"
+                    stage = "Stage C - Second peak formed, awaiting confirmation: Price touched first peak, hasn't broken neckline"
+                    breakdown_idx = n - 1
+                else:
+                    continue
 
-        # Volume checks
-        vol_sma50 = 0
-        vol_ls_avg = 0
-        vol_head_avg = 0
-        vol_rs_avg = 0
-        vol_progression_pass = None
-        vol_breakdown_pass = None
+            # Volume checks
+            vol_sma50 = 0
+            vol_ls_avg = 0
+            vol_head_avg = 0
+            vol_rs_avg = 0
+            vol_progression_pass = None
+            vol_breakdown_pass = None
 
-        if volumes is not None and len(volumes) == n:
-            vol_series = pd.Series(volumes)
-            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-            sma_idx = min(rs_idx, len(vol_sma) - 1)
-            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+            if volumes is not None and len(volumes) == n:
+                vol_series = pd.Series(volumes)
+                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                sma_idx = min(rs_idx, len(vol_sma) - 1)
+                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-            # Volume around each peak (±3 candles)
-            def avg_vol_around(idx, radius=3):
-                start = max(0, idx - radius)
-                end = min(n, idx + radius + 1)
-                return float(np.mean(volumes[start:end]))
+                # Volume around each peak (±3 candles)
+                def avg_vol_around(idx, radius=3):
+                    start = max(0, idx - radius)
+                    end = min(n, idx + radius + 1)
+                    return float(np.mean(volumes[start:end]))
 
-            vol_ls_avg = avg_vol_around(ls_idx)
-            vol_head_avg = avg_vol_around(head_idx)
-            vol_rs_avg = avg_vol_around(rs_idx)
+                vol_ls_avg = avg_vol_around(ls_idx)
+                vol_head_avg = avg_vol_around(head_idx)
+                vol_rs_avg = avg_vol_around(rs_idx)
 
-            # Volume progression: LS > Head > RS (declining) is ideal
-            vol_progression_pass = (vol_ls_avg > vol_head_avg > vol_rs_avg)
+                # Volume progression: LS > Head > RS (declining) is ideal
+                vol_progression_pass = (vol_ls_avg > vol_head_avg > vol_rs_avg)
 
-            if vol_sma50 > 0:
-                bd_vol = float(volumes[breakdown_idx])
-                vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+                if vol_sma50 > 0:
+                    bd_vol = float(volumes[breakdown_idx])
+                    vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-        # Head prominence for scoring (average of both sides)
-        head_prom_pct = (ls_prominence + rs_prominence) / 2
+            # Head prominence for scoring (average of both sides)
+            head_prom_pct = (ls_prominence + rs_prominence) / 2
 
-        quality = compute_quality_score("head_and_shoulders", {
-            "head_prominence_pct": head_prom_pct,
-            "shoulder_symmetry_pct": shoulder_diff_pct,
-            "neckline_slope_pct": neckline_slope_pct,
-            "vol_progression_pass": vol_progression_pass,
-            "vol_breakdown_pass": vol_breakdown_pass,
-        })
+            quality = compute_quality_score("head_and_shoulders", {
+                "head_prominence_pct": head_prom_pct,
+                "shoulder_symmetry_pct": shoulder_diff_pct,
+                "neckline_slope_pct": neckline_slope_pct,
+                "vol_progression_pass": vol_progression_pass,
+                "vol_breakdown_pass": vol_breakdown_pass,
+            })
 
-        pattern = {
-            "pattern_type":          "head_and_shoulders",
-            "ticker":                ticker,
-            "verdict":               "VALID",
-            "reject_reason":         "",
-            "left_shoulder_price":   round(float(ls_price), 2),
-            "head_price":            round(float(head_price), 2),
-            "right_shoulder_price":  round(float(rs_price), 2),
-            "left_neckline_price":   round(float(left_neck_price), 2),
-            "right_neckline_price":  round(float(right_neck_price), 2),
-            "breakdown_price":       round(float(prices[breakdown_idx]), 2),
-            "head_vs_ls_pct":        round(float(ls_prominence), 2),
-            "head_vs_rs_pct":        round(float(rs_prominence), 2),
-            "shoulder_symmetry_pct": round(float(shoulder_diff_pct), 2),
-            "neckline_slope":        round(float(neckline_slope), 4),
-            "neckline_slope_pct":    round(float(neckline_slope_pct), 2),
-            "span_candles":          int(span),
-            "vol_ls_avg":            round(float(vol_ls_avg), 0),
-            "vol_head_avg":          round(float(vol_head_avg), 0),
-            "vol_rs_avg":            round(float(vol_rs_avg), 0),
-            "vol_progression_pass":  vol_progression_pass,
-            "vol_breakdown_pass":    vol_breakdown_pass,
-            "quality_score":         quality,
-            "left_shoulder_idx":     int(ls_idx),
-            "head_idx":              int(head_idx),
-            "right_shoulder_idx":    int(rs_idx),
-            "left_neckline_idx":     int(left_neck_idx),
-            "right_neckline_idx":    int(right_neck_idx),
-            "breakdown_idx":         int(breakdown_idx),
-        }
+            pattern = {
+                "pattern_type":          "head_and_shoulders",
+                "ticker":                ticker,
+                "verdict":               "VALID",
+                "reject_reason":         "",
+                "status":                status,
+                "stage":                 stage,
+                "left_shoulder_price":   round(float(ls_price), 2),
+                "head_price":            round(float(head_price), 2),
+                "right_shoulder_price":  round(float(rs_price), 2),
+                "left_neckline_price":   round(float(left_neck_price), 2),
+                "right_neckline_price":  round(float(right_neck_price), 2),
+                "breakdown_price":       round(float(prices[breakdown_idx]), 2),
+                "head_vs_ls_pct":        round(float(ls_prominence), 2),
+                "head_vs_rs_pct":        round(float(rs_prominence), 2),
+                "shoulder_symmetry_pct": round(float(shoulder_diff_pct), 2),
+                "neckline_slope":        round(float(neckline_slope), 4),
+                "neckline_slope_pct":    round(float(neckline_slope_pct), 2),
+                "span_candles":          int(span),
+                "vol_ls_avg":            round(float(vol_ls_avg), 0),
+                "vol_head_avg":          round(float(vol_head_avg), 0),
+                "vol_rs_avg":            round(float(vol_rs_avg), 0),
+                "vol_progression_pass":  vol_progression_pass,
+                "vol_breakdown_pass":    vol_breakdown_pass,
+                "quality_score":         quality,
+                "left_shoulder_idx":     int(ls_idx),
+                "head_idx":              int(head_idx),
+                "right_shoulder_idx":    int(rs_idx),
+                "left_neckline_idx":     int(left_neck_idx),
+                "right_neckline_idx":    int(right_neck_idx),
+                "breakdown_idx":         int(breakdown_idx),
+            }
 
-        if dates is not None:
-            pattern["left_shoulder_date"]  = str(dates[ls_idx])
-            pattern["head_date"]           = str(dates[head_idx])
-            pattern["right_shoulder_date"] = str(dates[rs_idx])
-            pattern["left_neckline_date"]  = str(dates[left_neck_idx])
-            pattern["right_neckline_date"] = str(dates[right_neck_idx])
-            pattern["breakdown_date"]      = str(dates[breakdown_idx])
-            pattern["signal_date"]         = str(dates[breakdown_idx])
+            if dates is not None:
+                pattern["left_shoulder_date"]  = str(dates[ls_idx])
+                pattern["head_date"]           = str(dates[head_idx])
+                pattern["right_shoulder_date"] = str(dates[rs_idx])
+                pattern["left_neckline_date"]  = str(dates[left_neck_idx])
+                pattern["right_neckline_date"] = str(dates[right_neck_idx])
+                pattern["breakdown_date"]      = str(dates[breakdown_idx])
+                pattern["signal_date"]         = str(dates[breakdown_idx])
 
-        candidates.append(pattern)
+            candidates.append(pattern)
 
     # Deduplication
     candidates.sort(key=lambda p: p["quality_score"], reverse=True)
@@ -1715,112 +1841,133 @@ def detect_double_top(prices, volumes=None, ticker="UNKNOWN", dates=None,
 
     candidates = []
 
-    for i in range(len(peak_indices) - 1):
+    for i in range(len(peak_indices)):
         top1_idx = peak_indices[i]
-        top2_idx = peak_indices[i + 1]
+        top2_candidates = []
+        if i + 1 < len(peak_indices):
+            top2_candidates.append((peak_indices[i + 1], False))
+        if top1_idx >= n - 40:
+            top2_candidates.append((n - 1, True))
+        for top2_idx, is_stage_b in top2_candidates:
 
-        top1_price = prices[top1_idx]
-        top2_price = prices[top2_idx]
+            top1_price = prices[top1_idx]
+            top2_price = prices[top2_idx]
 
-        # Separation check
-        separation = top2_idx - top1_idx
-        if separation < MIN_DOUBLE_CANDLES:
-            continue
+            # Separation check
+            separation = top2_idx - top1_idx
+            if separation < MIN_DOUBLE_CANDLES:
+                continue
 
-        # Similarity check: tops within DOUBLE_TOP_SIMILARITY_PCT
-        similarity_pct = abs(top1_price - top2_price) / top1_price * 100
-        if similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
-            continue
+            # Similarity check: tops within DOUBLE_TOP_SIMILARITY_PCT
+            similarity_pct = abs(top1_price - top2_price) / top1_price * 100
+            if similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
+                if is_stage_b and top2_price < top1_price and similarity_pct <= DOUBLE_TOP_SIMILARITY_PCT + 3:
+                    pass # Stage B
+                else:
+                    continue
 
-        # Find valley (lowest point between the two tops)
-        valley_prices = prices[top1_idx:top2_idx + 1]
-        valley_rel_idx = int(np.argmin(valley_prices))
-        valley_idx = top1_idx + valley_rel_idx
-        valley_price = prices[valley_idx]
+            # Find valley (lowest point between the two tops)
+            valley_prices = prices[top1_idx:top2_idx + 1]
+            valley_rel_idx = int(np.argmin(valley_prices))
+            valley_idx = top1_idx + valley_rel_idx
+            valley_price = prices[valley_idx]
 
-        # Valley depth check
-        avg_top = (top1_price + top2_price) / 2
-        valley_drop_pct = (avg_top - valley_price) / avg_top * 100
-        if valley_drop_pct < MIN_VALLEY_DROP_PCT:
-            continue
+            # Valley depth check
+            avg_top = (top1_price + top2_price) / 2
+            valley_drop_pct = (avg_top - valley_price) / avg_top * 100
+            if valley_drop_pct < MIN_VALLEY_DROP_PCT:
+                continue
 
-        # Breakdown confirmation: price closes below valley after second top
-        breakdown_idx = None
-        for k in range(top2_idx + 1, min(n, top2_idx + 30)):
-            if prices[k] < valley_price:
-                breakdown_idx = k
-                break
+            # Breakdown confirmation: price closes below valley after second top
+            breakdown_idx = None
+            for k in range(top2_idx + 1, min(n, top2_idx + 30)):
+                if prices[k] < valley_price:
+                    breakdown_idx = k
+                    break
 
-        if breakdown_idx is None:
-            continue
+            status = "confirmed"
+            stage = ""
+            if breakdown_idx is None:
+                if is_stage_b and similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
+                    status = "forming"
+                    stage = "Stage B - Approaching second peak: Price rallying back up toward first peak"
+                    breakdown_idx = n - 1
+                elif not is_stage_b or (is_stage_b and similarity_pct <= DOUBLE_TOP_SIMILARITY_PCT):
+                    status = "forming"
+                    stage = "Stage C - Second peak formed, awaiting confirmation: Price touched first peak, hasn't broken neckline"
+                    breakdown_idx = n - 1
+                else:
+                    continue
 
-        # Volume checks
-        vol_sma50 = 0
-        vol_top1_avg = 0
-        vol_top2_avg = 0
-        vol_pattern_pass = None
-        vol_breakdown_pass = None
+            # Volume checks
+            vol_sma50 = 0
+            vol_top1_avg = 0
+            vol_top2_avg = 0
+            vol_pattern_pass = None
+            vol_breakdown_pass = None
 
-        if volumes is not None and len(volumes) == n:
-            vol_series = pd.Series(volumes)
-            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-            sma_idx = min(top2_idx, len(vol_sma) - 1)
-            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+            if volumes is not None and len(volumes) == n:
+                vol_series = pd.Series(volumes)
+                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                sma_idx = min(top2_idx, len(vol_sma) - 1)
+                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-            # Volume around each top (±3 candles)
-            def avg_vol(idx, radius=3):
-                s = max(0, idx - radius)
-                e = min(n, idx + radius + 1)
-                return float(np.mean(volumes[s:e]))
+                # Volume around each top (±3 candles)
+                def avg_vol(idx, radius=3):
+                    s = max(0, idx - radius)
+                    e = min(n, idx + radius + 1)
+                    return float(np.mean(volumes[s:e]))
 
-            vol_top1_avg = avg_vol(top1_idx)
-            vol_top2_avg = avg_vol(top2_idx)
+                vol_top1_avg = avg_vol(top1_idx)
+                vol_top2_avg = avg_vol(top2_idx)
 
-            # First top should have higher volume than second (weakening)
-            vol_pattern_pass = vol_top1_avg > vol_top2_avg
+                # First top should have higher volume than second (weakening)
+                vol_pattern_pass = vol_top1_avg > vol_top2_avg
 
-            if vol_sma50 > 0:
-                bd_vol = float(volumes[breakdown_idx])
-                vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+                if vol_sma50 > 0:
+                    bd_vol = float(volumes[breakdown_idx])
+                    vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-        quality = compute_quality_score("double_top", {
-            "similarity_pct": similarity_pct,
-            "depth_pct": valley_drop_pct,
-            "vol_pattern_pass": vol_pattern_pass,
-            "vol_breakout_pass": vol_breakdown_pass,
-        })
+            quality = compute_quality_score("double_top", {
+                "similarity_pct": similarity_pct,
+                "depth_pct": valley_drop_pct,
+                "vol_pattern_pass": vol_pattern_pass,
+                "vol_breakout_pass": vol_breakdown_pass,
+            })
 
-        pattern = {
-            "pattern_type":       "double_top",
-            "ticker":             ticker,
-            "verdict":            "VALID",
-            "reject_reason":      "",
-            "first_top_price":    round(float(top1_price), 2),
-            "valley_price":       round(float(valley_price), 2),
-            "second_top_price":   round(float(top2_price), 2),
-            "breakdown_price":    round(float(prices[breakdown_idx]), 2),
-            "similarity_pct":     round(float(similarity_pct), 2),
-            "valley_drop_pct":    round(float(valley_drop_pct), 2),
-            "separation":         int(separation),
-            "vol_top1_avg":       round(float(vol_top1_avg), 0),
-            "vol_top2_avg":       round(float(vol_top2_avg), 0),
-            "vol_pattern_pass":   vol_pattern_pass,
-            "vol_breakdown_pass": vol_breakdown_pass,
-            "quality_score":      quality,
-            "first_top_idx":      int(top1_idx),
-            "valley_idx":         int(valley_idx),
-            "second_top_idx":     int(top2_idx),
-            "breakdown_idx":      int(breakdown_idx),
-        }
+            pattern = {
+                "pattern_type":       "double_top",
+                "ticker":             ticker,
+                "verdict":            "VALID",
+                "reject_reason":      "",
+                    "status":             status,
+                    "stage":              stage,
+                "first_top_price":    round(float(top1_price), 2),
+                "valley_price":       round(float(valley_price), 2),
+                "second_top_price":   round(float(top2_price), 2),
+                "breakdown_price":    round(float(prices[breakdown_idx]), 2),
+                "similarity_pct":     round(float(similarity_pct), 2),
+                "valley_drop_pct":    round(float(valley_drop_pct), 2),
+                "separation":         int(separation),
+                "vol_top1_avg":       round(float(vol_top1_avg), 0),
+                "vol_top2_avg":       round(float(vol_top2_avg), 0),
+                "vol_pattern_pass":   vol_pattern_pass,
+                "vol_breakdown_pass": vol_breakdown_pass,
+                "quality_score":      quality,
+                "first_top_idx":      int(top1_idx),
+                "valley_idx":         int(valley_idx),
+                "second_top_idx":     int(top2_idx),
+                "breakdown_idx":      int(breakdown_idx),
+            }
 
-        if dates is not None:
-            pattern["first_top_date"]  = str(dates[top1_idx])
-            pattern["valley_date"]     = str(dates[valley_idx])
-            pattern["second_top_date"] = str(dates[top2_idx])
-            pattern["breakdown_date"]  = str(dates[breakdown_idx])
-            pattern["signal_date"]     = str(dates[breakdown_idx])
+            if dates is not None:
+                pattern["first_top_date"]  = str(dates[top1_idx])
+                pattern["valley_date"]     = str(dates[valley_idx])
+                pattern["second_top_date"] = str(dates[top2_idx])
+                pattern["breakdown_date"]  = str(dates[breakdown_idx])
+                pattern["signal_date"]     = str(dates[breakdown_idx])
 
-        candidates.append(pattern)
+            candidates.append(pattern)
 
     # Deduplication
     candidates.sort(key=lambda p: p["quality_score"], reverse=True)
@@ -1880,111 +2027,132 @@ def detect_double_bottom(prices, volumes=None, ticker="UNKNOWN", dates=None,
 
     candidates = []
 
-    for i in range(len(trough_indices) - 1):
+    for i in range(len(trough_indices)):
         bot1_idx = trough_indices[i]
-        bot2_idx = trough_indices[i + 1]
+        bot2_candidates = []
+        if i + 1 < len(trough_indices):
+            bot2_candidates.append((trough_indices[i + 1], False))
+        if bot1_idx >= n - 40:
+            bot2_candidates.append((n - 1, True))
+        for bot2_idx, is_stage_b in bot2_candidates:
 
-        bot1_price = prices[bot1_idx]
-        bot2_price = prices[bot2_idx]
+            bot1_price = prices[bot1_idx]
+            bot2_price = prices[bot2_idx]
 
-        # Separation check
-        separation = bot2_idx - bot1_idx
-        if separation < MIN_DOUBLE_CANDLES:
-            continue
+            # Separation check
+            separation = bot2_idx - bot1_idx
+            if separation < MIN_DOUBLE_CANDLES:
+                continue
 
-        # Similarity check
-        similarity_pct = abs(bot1_price - bot2_price) / bot1_price * 100
-        if similarity_pct > DOUBLE_BOTTOM_SIMILARITY_PCT:
-            continue
+            # Similarity check
+            similarity_pct = abs(bot1_price - bot2_price) / bot1_price * 100
+            if similarity_pct > DOUBLE_BOTTOM_SIMILARITY_PCT:
+                if is_stage_b and bot2_price > bot1_price and similarity_pct <= DOUBLE_BOTTOM_SIMILARITY_PCT + 3:
+                    pass # Stage B
+                else:
+                    continue
 
-        # Find peak (highest point between the two bottoms)
-        between_prices = prices[bot1_idx:bot2_idx + 1]
-        peak_rel_idx = int(np.argmax(between_prices))
-        peak_idx = bot1_idx + peak_rel_idx
-        peak_price = prices[peak_idx]
+            # Find peak (highest point between the two bottoms)
+            between_prices = prices[bot1_idx:bot2_idx + 1]
+            peak_rel_idx = int(np.argmax(between_prices))
+            peak_idx = bot1_idx + peak_rel_idx
+            peak_price = prices[peak_idx]
 
-        # Peak height check
-        avg_bot = (bot1_price + bot2_price) / 2
-        peak_rise_pct = (peak_price - avg_bot) / avg_bot * 100
-        if peak_rise_pct < MIN_PEAK_RISE_PCT:
-            continue
+            # Peak height check
+            avg_bot = (bot1_price + bot2_price) / 2
+            peak_rise_pct = (peak_price - avg_bot) / avg_bot * 100
+            if peak_rise_pct < MIN_PEAK_RISE_PCT:
+                continue
 
-        # Breakout confirmation: price closes above peak after second bottom
-        breakout_idx = None
-        for k in range(bot2_idx + 1, min(n, bot2_idx + 30)):
-            if prices[k] > peak_price:
-                breakout_idx = k
-                break
+            # Breakout confirmation: price closes above peak after second bottom
+            breakout_idx = None
+            for k in range(bot2_idx + 1, min(n, bot2_idx + 30)):
+                if prices[k] > peak_price:
+                    breakout_idx = k
+                    break
 
-        if breakout_idx is None:
-            continue
+            status = "confirmed"
+            stage = ""
+            if breakout_idx is None:
+                if is_stage_b and similarity_pct > DOUBLE_BOTTOM_SIMILARITY_PCT:
+                    status = "forming"
+                    stage = "Stage B - Approaching second trough: Price declining back down toward first trough"
+                    breakout_idx = n - 1
+                elif not is_stage_b or (is_stage_b and similarity_pct <= DOUBLE_BOTTOM_SIMILARITY_PCT):
+                    status = "forming"
+                    stage = "Stage C - Second trough formed, awaiting confirmation: Price touched first trough, hasn't broken neckline"
+                    breakout_idx = n - 1
+                else:
+                    continue
 
-        # Volume checks
-        vol_sma50 = 0
-        vol_bot1_avg = 0
-        vol_bot2_avg = 0
-        vol_pattern_pass = None
-        vol_breakout_pass = None
+            # Volume checks
+            vol_sma50 = 0
+            vol_bot1_avg = 0
+            vol_bot2_avg = 0
+            vol_pattern_pass = None
+            vol_breakout_pass = None
 
-        if volumes is not None and len(volumes) == n:
-            vol_series = pd.Series(volumes)
-            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-            sma_idx = min(bot2_idx, len(vol_sma) - 1)
-            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+            if volumes is not None and len(volumes) == n:
+                vol_series = pd.Series(volumes)
+                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                sma_idx = min(bot2_idx, len(vol_sma) - 1)
+                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-            def avg_vol(idx, radius=3):
-                s = max(0, idx - radius)
-                e = min(n, idx + radius + 1)
-                return float(np.mean(volumes[s:e]))
+                def avg_vol(idx, radius=3):
+                    s = max(0, idx - radius)
+                    e = min(n, idx + radius + 1)
+                    return float(np.mean(volumes[s:e]))
 
-            vol_bot1_avg = avg_vol(bot1_idx)
-            vol_bot2_avg = avg_vol(bot2_idx)
+                vol_bot1_avg = avg_vol(bot1_idx)
+                vol_bot2_avg = avg_vol(bot2_idx)
 
-            # Second bottom should have lower volume (declining selling pressure)
-            vol_pattern_pass = vol_bot2_avg < vol_bot1_avg
+                # Second bottom should have lower volume (declining selling pressure)
+                vol_pattern_pass = vol_bot2_avg < vol_bot1_avg
 
-            if vol_sma50 > 0:
-                bo_vol = float(volumes[breakout_idx])
-                vol_breakout_pass = bo_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+                if vol_sma50 > 0:
+                    bo_vol = float(volumes[breakout_idx])
+                    vol_breakout_pass = bo_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-        quality = compute_quality_score("double_bottom", {
-            "similarity_pct": similarity_pct,
-            "depth_pct": peak_rise_pct,
-            "vol_pattern_pass": vol_pattern_pass,
-            "vol_breakout_pass": vol_breakout_pass,
-        })
+            quality = compute_quality_score("double_bottom", {
+                "similarity_pct": similarity_pct,
+                "depth_pct": peak_rise_pct,
+                "vol_pattern_pass": vol_pattern_pass,
+                "vol_breakout_pass": vol_breakout_pass,
+            })
 
-        pattern = {
-            "pattern_type":       "double_bottom",
-            "ticker":             ticker,
-            "verdict":            "VALID",
-            "reject_reason":      "",
-            "first_bottom_price": round(float(bot1_price), 2),
-            "peak_price":         round(float(peak_price), 2),
-            "second_bottom_price":round(float(bot2_price), 2),
-            "breakout_price":     round(float(prices[breakout_idx]), 2),
-            "similarity_pct":     round(float(similarity_pct), 2),
-            "peak_rise_pct":      round(float(peak_rise_pct), 2),
-            "separation":         int(separation),
-            "vol_bot1_avg":       round(float(vol_bot1_avg), 0),
-            "vol_bot2_avg":       round(float(vol_bot2_avg), 0),
-            "vol_pattern_pass":   vol_pattern_pass,
-            "vol_breakout_pass":  vol_breakout_pass,
-            "quality_score":      quality,
-            "first_bottom_idx":   int(bot1_idx),
-            "peak_idx":           int(peak_idx),
-            "second_bottom_idx":  int(bot2_idx),
-            "breakout_idx":       int(breakout_idx),
-        }
+            pattern = {
+                "pattern_type":       "double_bottom",
+                "ticker":             ticker,
+                "verdict":            "VALID",
+                "reject_reason":      "",
+                    "status":             status,
+                    "stage":              stage,
+                "first_bottom_price": round(float(bot1_price), 2),
+                "peak_price":         round(float(peak_price), 2),
+                "second_bottom_price":round(float(bot2_price), 2),
+                "breakout_price":     round(float(prices[breakout_idx]), 2),
+                "similarity_pct":     round(float(similarity_pct), 2),
+                "peak_rise_pct":      round(float(peak_rise_pct), 2),
+                "separation":         int(separation),
+                "vol_bot1_avg":       round(float(vol_bot1_avg), 0),
+                "vol_bot2_avg":       round(float(vol_bot2_avg), 0),
+                "vol_pattern_pass":   vol_pattern_pass,
+                "vol_breakout_pass":  vol_breakout_pass,
+                "quality_score":      quality,
+                "first_bottom_idx":   int(bot1_idx),
+                "peak_idx":           int(peak_idx),
+                "second_bottom_idx":  int(bot2_idx),
+                "breakout_idx":       int(breakout_idx),
+            }
 
-        if dates is not None:
-            pattern["first_bottom_date"]  = str(dates[bot1_idx])
-            pattern["peak_date"]          = str(dates[peak_idx])
-            pattern["second_bottom_date"] = str(dates[bot2_idx])
-            pattern["breakout_date"]      = str(dates[breakout_idx])
-            pattern["signal_date"]        = str(dates[breakout_idx])
+            if dates is not None:
+                pattern["first_bottom_date"]  = str(dates[bot1_idx])
+                pattern["peak_date"]          = str(dates[peak_idx])
+                pattern["second_bottom_date"] = str(dates[bot2_idx])
+                pattern["breakout_date"]      = str(dates[breakout_idx])
+                pattern["signal_date"]        = str(dates[breakout_idx])
 
-        candidates.append(pattern)
+            candidates.append(pattern)
 
     # Deduplication
     candidates.sort(key=lambda p: p["quality_score"], reverse=True)
@@ -2302,8 +2470,15 @@ PRINT_DISPATCH = {
 def print_any_pattern(p, index=1):
     """Prints any pattern using the correct pattern-specific printer."""
     ptype = p.get("pattern_type", "cup_and_handle")
-    printer = PRINT_DISPATCH.get(ptype, print_cup_and_handle)
-    printer(p, index)
+    status = p.get("status", "confirmed")
+    
+    if status == "forming":
+        print(f"\n  [{index}] \033[93m[FORMING]\033[0m {p['ticker']} - {PATTERN_NAMES.get(ptype, ptype)}")
+        print(f"      Stage: \033[93m{p.get('stage')}\033[0m")
+        # We skip calling the pattern-specific printer because it expects confirmed fields like breakouts
+    else:
+        printer = PRINT_DISPATCH.get(ptype, print_cup_and_handle)
+        printer(p, index)
 
 
 # =============================================================================
@@ -2655,7 +2830,7 @@ def run_self_tests(pattern_type="all"):
 #  14. SCANNING INFRASTRUCTURE — Multi-pattern scanning
 # =============================================================================
 
-def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False):
+def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False, live_mode=False):
     """
     Runs selected pattern detections on a single ticker's DataFrame.
 
@@ -2729,7 +2904,10 @@ def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False):
         if scan_all or ptype in patterns_to_scan:
             found = detect_fn()
             if found:
-                results[ptype] = found
+                if not live_mode:
+                    found = [p for p in found if p.get("status") == "confirmed"]
+                if found:
+                    results[ptype] = found
 
     return results
 
@@ -2927,10 +3105,11 @@ def is_market_open():
 
 def _reset_dedup_cache_if_new_day():
     """Clears the dedup cache when the IST date rolls over."""
-    global _live_alerted_today, _live_alert_date
+    global _live_alerted_today, _live_alert_date, _live_forming_state
     today_ist = _get_ist_now().date()
     if _live_alert_date != today_ist:
         _live_alerted_today = set()
+        _live_forming_state = {}
         _live_alert_date = today_ist
 
 
@@ -2956,7 +3135,7 @@ def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
     One-shot live scan: downloads latest data, runs detection,
     filters for patterns completing TODAY with deduplication.
     """
-    global _live_alerted_today
+    global _live_alerted_today, _live_forming_state
 
     _reset_dedup_cache_if_new_day()
 
@@ -2965,20 +3144,40 @@ def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
     )
 
     new_alerts = []
+    current_forming_keys = set()
 
     for ticker, df in all_data.items():
-        ticker_results = scan_ticker(df, ticker, patterns_to_scan, interval=interval)
+        ticker_results = scan_ticker(df, ticker, patterns_to_scan, interval=interval, live_mode=True)
 
         for ptype, patterns in ticker_results.items():
             dedup_key = (ticker, ptype)
-            if dedup_key in _live_alerted_today:
-                continue
 
             for pat in patterns:
-                if _is_pattern_from_today(pat):
-                    _live_alerted_today.add(dedup_key)
-                    new_alerts.append(pat)
-                    break
+                status = pat.get("status", "confirmed")
+                if status == "confirmed":
+                    if dedup_key in _live_alerted_today:
+                        continue
+                    if _is_pattern_from_today(pat):
+                        _live_alerted_today.add(dedup_key)
+                        new_alerts.append(pat)
+                        _live_forming_state.pop(dedup_key, None)
+                        break
+                elif status == "forming":
+                    if dedup_key in _live_alerted_today:
+                        continue
+                    
+                    stage = pat.get("stage", "Unknown Stage")
+                    current_forming_keys.add(dedup_key)
+                    
+                    if dedup_key not in _live_forming_state or _live_forming_state[dedup_key] != stage:
+                        _live_forming_state[dedup_key] = stage
+                        new_alerts.append(pat)
+                        break
+
+    # Remove any forming patterns that broke down / disappeared
+    keys_to_remove = [k for k in _live_forming_state.keys() if k not in current_forming_keys]
+    for k in keys_to_remove:
+        _live_forming_state.pop(k, None)
 
     return new_alerts
 
