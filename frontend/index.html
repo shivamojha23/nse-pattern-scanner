@@ -717,6 +717,140 @@
             font-size: 11px;
             padding: 4px 8px;
         }
+
+        /* ── Toggle Switch ── */
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 40px;
+            height: 20px;
+        }
+
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: var(--bg-secondary);
+            border: 1px solid var(--border-color);
+            transition: .4s;
+        }
+
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 14px;
+            width: 14px;
+            left: 2px;
+            bottom: 2px;
+            background-color: var(--text-muted);
+            transition: .4s;
+        }
+
+        input:checked+.slider {
+            background-color: var(--green);
+            border-color: var(--green);
+        }
+
+        input:checked+.slider:before {
+            transform: translateX(20px);
+            background-color: #fff;
+        }
+
+        .slider.round {
+            border-radius: 20px;
+        }
+
+        .slider.round:before {
+            border-radius: 50%;
+        }
+
+        /* ── Toast Container ── */
+        #toastContainer {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            z-index: 9999;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+        }
+
+        .toast {
+            background: var(--bg-card);
+            border-left: 4px solid var(--accent-primary);
+            box-shadow: var(--shadow-lg);
+            padding: 15px 20px;
+            border-radius: 8px;
+            color: var(--text-primary);
+            min-width: 300px;
+            animation: slideInRight 0.4s ease forwards;
+            position: relative;
+        }
+
+        .toast.hiding {
+            animation: slideOutRight 0.4s ease forwards;
+        }
+
+        .toast-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .toast-title {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--accent-primary);
+        }
+
+        .toast-close {
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 16px;
+        }
+
+        .toast-close:hover {
+            color: var(--text-primary);
+        }
+
+        .toast-body {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        @keyframes slideInRight {
+            from {
+                transform: translateX(120%);
+                opacity: 0;
+            }
+
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        @keyframes slideOutRight {
+            from {
+                transform: translateX(0);
+                opacity: 1;
+            }
+
+            to {
+                transform: translateX(120%);
+                opacity: 0;
+            }
+        }
     </style>
 </head>
 
@@ -728,6 +862,9 @@
             <div class="spinner-text" id="loadingText">Scanning stocks...</div>
         </div>
     </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer"></div>
 
     <div class="app-container">
         <!-- Error Banner -->
@@ -780,22 +917,33 @@
                     </div>
                     <div class="control-group">
                         <div class="control-label">Interval</div>
-                        <select id="intervalSelect">
+                        <input type="text" id="intervalSelect" list="intervalOptions" value="1d" placeholder="e.g. 15m, 1h, 1d...">
+                        <datalist id="intervalOptions">
                             <option value="15m">15 Minutes</option>
                             <option value="1h">1 Hour</option>
-                            <option value="1d" selected>1 Day</option>
+                            <option value="1d">1 Day</option>
                             <option value="1wk">1 Week</option>
-                        </select>
+                        </datalist>
                     </div>
                     <div class="control-group">
                         <div class="control-label">Lookback</div>
-                        <select id="lookbackSelect">
+                        <input type="text" id="lookbackSelect" list="lookbackOptions" value="3mo" placeholder="e.g. 1mo, 1y, 5y...">
+                        <datalist id="lookbackOptions">
                             <option value="1mo">1 Month</option>
-                            <option value="3mo" selected>3 Months</option>
+                            <option value="3mo">3 Months</option>
                             <option value="6mo">6 Months</option>
                             <option value="1y">1 Year</option>
                             <option value="2y">2 Years</option>
-                        </select>
+                        </datalist>
+                    </div>
+
+                    <div class="control-group"
+                        style="flex-direction: row; justify-content: space-between; align-items: center; background: var(--bg-tertiary); padding: 8px 12px; border-radius: 6px; margin-top: 10px;">
+                        <div class="control-label" style="margin-bottom: 0;">Live Alerts</div>
+                        <label class="switch">
+                            <input type="checkbox" id="liveAlertsToggle">
+                            <span class="slider round"></span>
+                        </label>
                     </div>
                 </div>
 
@@ -905,6 +1053,7 @@
             patternSelect: document.getElementById('patternSelect'),
             intervalSelect: document.getElementById('intervalSelect'),
             lookbackSelect: document.getElementById('lookbackSelect'),
+            liveAlertsToggle: document.getElementById('liveAlertsToggle'),
             scanBtn: document.getElementById('scanBtn'),
             sortSelect: document.getElementById('sortSelect'),
             resultsList: document.getElementById('resultsList'),
@@ -1314,6 +1463,23 @@
         //  EVENT HANDLERS
         // ──────────────────────────────────────────────────────────
 
+        function clearChartState() {
+            if (!candleSeries) return;
+
+            console.log(`Clearing markers for previous selection`);
+
+            // 1. Clear markers
+            candleSeries.setMarkers([]);
+
+            // 2. Remove price lines
+            priceLines.forEach(line => {
+                try { candleSeries.removePriceLine(line); } catch (e) { }
+            });
+            priceLines = [];
+
+            // 3. Remove shaded regions (if any were added in the future, they would be cleared here)
+        }
+
         async function selectResult(index) {
             const sorted = sortResults([...scanResults]);
             const result = sorted[index];
@@ -1326,13 +1492,23 @@
                 el.classList.toggle('active', i === index);
             });
 
+            // Explicitly clear ALL previous chart state FIRST before loading new data
+            clearChartState();
+
             // Load candles
             const interval = els.intervalSelect.value;
             const lookback = els.lookbackSelect.value;
             const data = await loadCandles(result.ticker, interval, lookback);
 
+            // RACE CONDITION FIX: Discard response if user clicked another result while this fetch was in-flight
+            if (selectedResult !== result) {
+                console.warn(`Discarding stale response for ${result.ticker} (User clicked a different result)`);
+                return;
+            }
+
             if (data && data.candles && data.candles.length > 0) {
                 setChartData(data.candles);
+                console.log(`Setting markers for: ${result.pattern_type}-${result.ticker}`);
                 addPatternMarkers(result.key_levels, data.candles);
             }
 
@@ -1359,6 +1535,82 @@
         }
 
         // ──────────────────────────────────────────────────────────
+        //  LIVE ALERTS
+        // ──────────────────────────────────────────────────────────
+
+        let liveScanIntervalId = null;
+
+        function showToast(title, message) {
+            const container = document.getElementById('toastContainer');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <div class="toast-header">
+                    <div class="toast-title">${title}</div>
+                    <div class="toast-close" onclick="this.parentElement.parentElement.classList.add('hiding'); setTimeout(() => this.parentElement.parentElement.remove(), 400)">&times;</div>
+                </div>
+                <div class="toast-body">${message}</div>
+            `;
+            container.appendChild(toast);
+
+            // Auto remove after 6 seconds
+            setTimeout(() => {
+                if (toast.parentElement) {
+                    toast.classList.add('hiding');
+                    setTimeout(() => toast.remove(), 400);
+                }
+            }, 6000);
+        }
+
+        async function runLiveScan() {
+            if (!els.liveAlertsToggle.checked) return;
+
+            const patterns = els.patternSelect.value;
+            const interval = els.intervalSelect.value;
+            const lookback = els.lookbackSelect.value;
+
+            try {
+                const response = await fetch(`${API_BASE}/api/live_scan?patterns=${patterns}&interval=${interval}&lookback=${lookback}`);
+                if (!response.ok) throw new Error('Live scan failed');
+
+                const data = await response.json();
+                if (data.alerts && data.alerts.length > 0) {
+                    data.alerts.forEach(alert => {
+                        const signalHtml = alert.signal_type === 'BULLISH' ? '🟢 Bullish' : (alert.signal_type === 'BEARISH' ? '🔴 Bearish' : '⚪ Neutral');
+                        showToast(
+                            `🔔 New Pattern: ${alert.ticker}`,
+                            `${alert.pattern} completed today!<br>Verdict: <b>${alert.verdict}</b> | ${signalHtml}`
+                        );
+
+                        // Push into current results if not already there to update UI
+                        const exists = scanResults.find(r => r.ticker === alert.ticker && r.pattern_type === alert.pattern_type);
+                        if (!exists) {
+                            scanResults.unshift(alert);
+                            renderResults();
+                        }
+                    });
+                }
+            } catch (err) {
+                console.error("Live scan polling error:", err);
+            }
+        }
+
+        function toggleLiveAlerts() {
+            if (els.liveAlertsToggle.checked) {
+                showToast("Live Alerts ON", "Scanning for new patterns every minute.");
+                // Run one immediately, then every 60 seconds
+                runLiveScan();
+                liveScanIntervalId = setInterval(runLiveScan, 60000);
+            } else {
+                showToast("Live Alerts OFF", "Background polling stopped.");
+                if (liveScanIntervalId) {
+                    clearInterval(liveScanIntervalId);
+                    liveScanIntervalId = null;
+                }
+            }
+        }
+
+        // ──────────────────────────────────────────────────────────
         //  INITIALIZATION
         // ──────────────────────────────────────────────────────────
 
@@ -1368,6 +1620,7 @@
             els.refreshBtn.addEventListener('click', runScan);
             els.themeToggle.addEventListener('click', toggleTheme);
             els.sortSelect.addEventListener('change', renderResults);
+            els.liveAlertsToggle.addEventListener('change', toggleLiveAlerts);
 
             // Initialize chart
             initChart();
