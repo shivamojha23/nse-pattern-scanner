@@ -162,10 +162,11 @@ MIN_HS_CANDLES = 20            # Minimum span (left shoulder → right shoulder)
 NECKLINE_SLOPE_WARN_PCT = 5    # Warn if neckline slopes more than this %
 TROUGH_MAX_DEPTH_PCT = 0.22    # Max depth of troughs relative to lower shoulder
 TROUGH_MAX_DIFF_PCT = 8.0      # Max difference between the two troughs
-MIN_LS_TO_HEAD_CANDLES = 10    # Min candles between left shoulder and head
-MIN_HEAD_TO_RS_CANDLES = 10    # Min candles between head and right shoulder
+MIN_LS_TO_HEAD_CANDLES = 7     # Min candles between left shoulder and head
+MIN_HEAD_TO_RS_CANDLES = 7     # Min candles between head and right shoulder
 MAX_LS_TO_HEAD_CANDLES = 45    # Max candles between left shoulder and head
 MAX_HEAD_TO_RS_CANDLES = 45    # Max candles between head and right shoulder
+ATR_HS_MULTIPLIER = 1.5        # Minimum Head-to-Neckline depth in ATR units
 
 # ─── DOUBLE TOP / DOUBLE BOTTOM ──────────────────────────────────────────
 DOUBLE_TOP_SIMILARITY_PCT = 6       # Peaks within 6% of each other
@@ -305,7 +306,8 @@ def fetch_batch_data(tickers, period=None, start=None, end=None, interval="15m")
                 "interval": interval,
                 "group_by": "ticker",
                 "progress": False,
-                "threads": True
+                "threads": True,
+                "auto_adjust": True
             }
             if start and end:
                 download_kwargs["start"] = start
@@ -1479,7 +1481,7 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
 #  9. DETECT HEAD AND SHOULDERS
 # =============================================================================
 
-def detect_head_and_shoulders(prices, volumes=None, ticker="UNKNOWN",
+def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN",
                                dates=None, interval="1d", verbose=False):
     """
     Detects Head and Shoulders reversal patterns: three successive peaks
@@ -1588,10 +1590,23 @@ def detect_head_and_shoulders(prices, volumes=None, ticker="UNKNOWN",
                 left_neck_price = prices[left_neck_idx]
                 right_neck_price = prices[right_neck_idx]
 
+                # Circuit limit gap filter (organic formation check)
+                if head_idx - left_neck_idx < 3 or right_neck_idx - head_idx < 3:
+                    continue
+
                 # Trough proximity constraint (troughs must be close in price)
                 trough_diff_pct = abs(left_neck_price - right_neck_price) / max(left_neck_price, right_neck_price) * 100
                 if trough_diff_pct > TROUGH_MAX_DIFF_PCT:
                     continue
+
+                # Vertical Depth (ATR filter)
+                if highs is not None and lows is not None:
+                    # Calculate ATR up to the right shoulder to represent current volatility
+                    atr = compute_atr(highs[:rs_idx+1], lows[:rs_idx+1], prices[:rs_idx+1])
+                    if atr > 0:
+                        head_depth = head_price - min(left_neck_price, right_neck_price)
+                        if head_depth < ATR_HS_MULTIPLIER * atr:
+                            continue
 
                 # Neckline-proximity constraint (max depth)
                 lower_shoulder = min(ls_price, rs_price)
@@ -3657,7 +3672,7 @@ def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False):
             interval=interval, verbose=verbose
         ),
         "head_and_shoulders": lambda: detect_head_and_shoulders(
-            close, volumes=vol, ticker=ticker, dates=dates,
+            close, highs=highs, lows=lows, volumes=vol, ticker=ticker, dates=dates,
             interval=interval, verbose=verbose
         ),
         "double_top": lambda: detect_double_top(
