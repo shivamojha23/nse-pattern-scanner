@@ -676,12 +676,12 @@ async def get_candles(
         ticker = ticker + ".NS"
 
     try:
-        # Download data for this single ticker
-        df = yf.download(
-            tickers=ticker,
+        # Fetch data via Layer 1 Cache
+        from db_cache import get_stock_data
+        df = get_stock_data(
+            ticker=ticker,
             period=validated_lookback,
-            interval=interval,
-            progress=False,
+            interval=interval
         )
 
         if df.empty:

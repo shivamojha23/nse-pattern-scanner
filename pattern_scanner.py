@@ -169,20 +169,12 @@ MAX_HEAD_TO_RS_CANDLES = 45    # Max candles between head and right shoulder
 ATR_HS_MULTIPLIER = 1.5        # Minimum Head-to-Neckline depth in ATR units
 
 # ─── DOUBLE TOP / DOUBLE BOTTOM ──────────────────────────────────────────
-DOUBLE_TOP_SIMILARITY_PCT = 6       # Peaks within 6% of each other
-DOUBLE_BOTTOM_SIMILARITY_PCT = 6    # Bottoms within 6% of each other
-MIN_VALLEY_DROP_PCT = 0.10          # 10% — valley must drop this fraction below first peak
-                                    # (Bulkowski observed range: 10–20%; no hard min stated,
-                                    #  but 10% is the floor of his studied range)
-MIN_NECKLINE_RISE_PCT = 0.10        # 10% — neckline must rise this fraction above first bottom
-                                    # (mirror of valley drop for Double Bottom)
-PRIOR_TREND_LOOKBACK_CANDLES = 20   # Candles for prior-trend linear regression
-MIN_PEAK_GAP_DAYS = 14              # Minimum calendar days between peaks/bottoms
-                                    # (Bulkowski median: 42 days; 14 = 2 full trading weeks,
-                                    #  below median but ensures separation isn't noise)
-MAX_PEAK_GAP_DAYS = 90              # Maximum calendar days between peaks/bottoms
-                                    # (⚠️ Engineering default — fills structural gap;
-                                    #  prevents matching peaks from different market regimes)
+DOUBLE_TOP_SIMILARITY_PCT = 5
+DOUBLE_BOTTOM_SIMILARITY_PCT = 5
+MIN_VALLEY_DROP_PCT = 5
+MIN_PEAK_RISE_PCT = 5
+MIN_DOUBLE_CANDLES = 10
+MAX_DOUBLE_CANDLES = 60             # Maximum bars between valleys
 BREAKDOWN_CONFIRM_PCT = 0.005       # 0.5% — decisive close margin for Double Top
 BREAKOUT_CONFIRM_PCT_DB = 0.005     # 0.5% — decisive close margin for Double Bottom
 BREAKDOWN_CONFIRM_CANDLES_DT = 2    # Sustained candles for breakdown confirmation
@@ -233,48 +225,10 @@ _live_alert_date = None
 
 def get_nifty_list():
     """
-    Downloads the Nifty 200 stock list from a public CSV hosted by NSE India.
-
-    Returns
-    -------
-    list[str]
-        Ticker symbols with ".NS" suffix (e.g., ["RELIANCE.NS", "TCS.NS"]).
-        Falls back to a curated Nifty 50 list if the download fails.
+    Fetches the Nifty 200 stock list via the Layer 2 cache.
     """
-    csv_urls = [
-        "https://archives.nseindia.com/content/indices/ind_nifty200list.csv",
-        "https://archives.nseindia.com/content/indices/ind_nifty100list.csv",
-        "https://archives.nseindia.com/content/indices/ind_nifty50list.csv",
-    ]
-
-    for url in csv_urls:
-        try:
-            print(f"  ↳ Trying to fetch watchlist from:\n    {url}")
-            df = pd.read_csv(url)
-            if "Symbol" in df.columns:
-                symbols = [f"{sym.strip()}.NS" for sym in df["Symbol"].tolist()]
-                print(f"  ✓ Loaded {len(symbols)} tickers from NSE index CSV.\n")
-                return symbols
-            else:
-                print(f"  ✗ CSV downloaded but 'Symbol' column not found.")
-        except Exception as e:
-            print(f"  ✗ Failed: {e}")
-
-    # Fallback — hardcoded Nifty 50
-    print("  ⚠ All CSV sources failed. Using hardcoded Nifty 50 fallback.\n")
-    fallback = [
-        "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
-        "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
-        "LT", "AXISBANK", "ASIANPAINT", "HCLTECH", "MARUTI",
-        "SUNPHARMA", "TITAN", "BAJFINANCE", "WIPRO", "ULTRACEMCO",
-        "NESTLEIND", "ONGC", "NTPC", "POWERGRID", "M&M",
-        "TATAMOTORS", "TATASTEEL", "JSWSTEEL", "ADANIENT", "ADANIPORTS",
-        "BAJAJFINSV", "TECHM", "HDFCLIFE", "SBILIFE", "DIVISLAB",
-        "DRREDDY", "CIPLA", "APOLLOHOSP", "EICHERMOT", "HEROMOTOCO",
-        "COALINDIA", "BPCL", "GRASIM", "INDUSINDBK", "BRITANNIA",
-        "TATACONSUM", "HINDALCO", "UPL", "BAJAJ-AUTO", "LTIM",
-    ]
-    return [f"{s}.NS" for s in fallback]
+    from db_cache import get_cached_watchlist
+    return get_cached_watchlist("nifty200")
 
 
 # =============================================================================
@@ -482,7 +436,7 @@ def compute_quality_score(pattern_type, metrics):
 
 def detect_cup_and_handle(prices, highs=None, volumes=None,
                           ticker="UNKNOWN", dates=None,
-                          interval="1d", verbose=False):
+                          interval="1d", verbose=False, structural_cache=None):
     """
     Scans a 1-D array of closing prices for Cup-and-Handle patterns using
     verified mathematical geometry filters, price smoothing, volume
@@ -503,323 +457,350 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
     if len(prices) < 30:
         return []
 
-    # ── Step 1: Smooth prices and find peaks/troughs ──
-    smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
+    # ── Layer 4b Structural Cache Bypass ──
+    valid_cups = []
+    cache_hit = False
+    
+    if structural_cache is not None and "cup_pairs" in structural_cache and dates is not None:
+        try:
+            for (l_date, b_date, r_date) in structural_cache["cup_pairs"]:
+                l_idx = dates.get_loc(pd.Timestamp(l_date))
+                b_idx = dates.get_loc(pd.Timestamp(b_date))
+                r_idx = dates.get_loc(pd.Timestamp(r_date))
+                if r_idx < len(prices) and prices[r_idx] > 0:
+                    valid_cups.append((l_idx, b_idx, r_idx))
+            cache_hit = True
+        except KeyError:
+            valid_cups = []
+            cache_hit = False
+            
+    if not cache_hit:
+        # ── Step 1: Smooth prices and find peaks/troughs ──
+        smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
 
-    min_prominence = np.median(smoothed) * 0.01
-    peak_indices, _ = find_peaks(smoothed, distance=10, prominence=min_prominence)
-    trough_indices, _ = find_peaks(-smoothed, distance=10, prominence=min_prominence)
+        min_prominence = np.median(smoothed) * 0.01
+        peak_indices, _ = find_peaks(smoothed, distance=10, prominence=min_prominence)
+        trough_indices, _ = find_peaks(-smoothed, distance=10, prominence=min_prominence)
 
-    if len(peak_indices) < 2 or len(trough_indices) < 1:
-        return []
+        if len(peak_indices) < 2 or len(trough_indices) < 1:
+            if isinstance(structural_cache, dict):
+                structural_cache["cup_pairs"] = []
+            return []
+
+        # ── Step 2: Try every combination (Left Rim, Right Rim) ──
+        for i in range(len(peak_indices)):
+            for j in range(i + 1, len(peak_indices)):
+                left_rim_idx = peak_indices[i]
+                right_rim_idx = peak_indices[j]
+
+                left_rim_price = prices[left_rim_idx]
+                right_rim_price = prices[right_rim_idx]
+
+                if right_rim_price == 0:
+                    continue
+
+                is_macro = interval.endswith('d') or interval.endswith('w') or interval.endswith('wk')
+                if is_macro:
+                    window_start = max(0, left_rim_idx - 20)
+                    window_end = min(len(prices), left_rim_idx + 21)
+                    if np.max(prices[window_start:window_end]) > left_rim_price:
+                        continue
+                else:
+                    if left_rim_idx < 10:
+                        continue
+                    if prices[left_rim_idx - 10] >= left_rim_price:
+                        continue
+                    window_start = max(0, left_rim_idx - 5)
+                    window_end = min(len(prices), left_rim_idx + 6)
+                    if np.max(prices[window_start:window_end]) > left_rim_price:
+                        continue
+
+                cup_width = right_rim_idx - left_rim_idx
+                if cup_width < 15 or cup_width > len(prices) * 0.8:
+                    continue
+
+                troughs_in_cup = [t for t in trough_indices if left_rim_idx < t < right_rim_idx]
+                if not troughs_in_cup:
+                    continue
+
+                raw_prices_in_cup = prices[left_rim_idx:right_rim_idx]
+                cup_bottom_idx = left_rim_idx + int(np.argmin(raw_prices_in_cup))
+                cup_bottom_price = prices[cup_bottom_idx]
+
+                cup_left_duration = cup_bottom_idx - left_rim_idx
+                cup_right_duration = right_rim_idx - cup_bottom_idx
+                if cup_left_duration < MIN_CUP_CANDLES or cup_right_duration < MIN_CUP_CANDLES:
+                    continue
+
+                prices_after_bottom = prices[cup_bottom_idx:right_rim_idx + 1]
+                if len(prices_after_bottom) > 0 and np.min(prices_after_bottom) < cup_bottom_price:
+                    continue
+
+                left_margin = left_rim_idx + cup_width * 0.15
+                right_margin = right_rim_idx - cup_width * 0.15
+                if not (left_margin <= cup_bottom_idx <= right_margin):
+                    continue
+
+                cup_drop_pct = ((left_rim_price - cup_bottom_price) / left_rim_price) * 100
+                if not (MIN_CUP_DROP_PCT <= cup_drop_pct <= MAX_CUP_DROP_PCT):
+                    continue
+
+                recovery_pct = abs(right_rim_price - left_rim_price) / left_rim_price * 100
+                if recovery_pct > MAX_RECOVERY_GAP_PCT:
+                    continue
+
+                valid_cups.append((left_rim_idx, cup_bottom_idx, right_rim_idx))
+
+        if isinstance(structural_cache, dict) and dates is not None:
+            structural_cache["cup_pairs"] = [
+                (str(dates[l]), str(dates[b]), str(dates[r])) for l, b, r in valid_cups
+            ]
 
     candidates = []
+    
+    # Evaluate handle and breakout for each valid cup structure
+    for left_rim_idx, cup_bottom_idx, right_rim_idx in valid_cups:
+        left_rim_price = prices[left_rim_idx]
+        right_rim_price = prices[right_rim_idx]
+        cup_bottom_price = prices[cup_bottom_idx]
+        cup_width = right_rim_idx - left_rim_idx
+        cup_left_duration = cup_bottom_idx - left_rim_idx
+        cup_right_duration = right_rim_idx - cup_bottom_idx
+        cup_drop_pct = ((left_rim_price - cup_bottom_price) / left_rim_price) * 100
+        recovery_pct = abs(right_rim_price - left_rim_price) / left_rim_price * 100
 
-    # ── Step 2: Try every combination of (Left Rim, Right Rim) ──
-    for i in range(len(peak_indices)):
-        for j in range(i + 1, len(peak_indices)):
-            left_rim_idx = peak_indices[i]
-            right_rim_idx = peak_indices[j]
+        # ── Handle detection (Bug 2/3 Fix) ──
+        if right_rim_idx + 1 >= len(prices):
+            continue
 
-            left_rim_price = prices[left_rim_idx]
-            right_rim_price = prices[right_rim_idx]
+        old_handle_zone_end = min(right_rim_idx + max(1, cup_width // 4), len(prices) - 1)
+        old_handle_prices = prices[right_rim_idx : old_handle_zone_end + 1]
+        old_handle_low_price = np.min(old_handle_prices) if len(old_handle_prices) > 0 else right_rim_price
 
-            if right_rim_price == 0:
-                continue
+        current_handle_low = prices[right_rim_idx]
+        current_handle_low_idx = right_rim_idx
+        breakout_count = 0
+        breakout_confirmed = False
+        breakout_start_idx = -1
 
-            # ── Rule 1: Dynamic Trend Check ──
-            is_macro = interval.endswith('d') or interval.endswith('w') or interval.endswith('wk')
+        for k in range(right_rim_idx + 1,
+                       min(len(prices), right_rim_idx + 1 + MAX_HANDLE_LOOKFORWARD_CANDLES)):
+            curr_price = prices[k]
 
-            if is_macro:
-                window_start = max(0, left_rim_idx - 20)
-                window_end = min(len(prices), left_rim_idx + 21)
-                if np.max(prices[window_start:window_end]) > left_rim_price:
-                    continue
+            if curr_price < current_handle_low:
+                current_handle_low = curr_price
+                current_handle_low_idx = k
+
+            if curr_price > right_rim_price:
+                breakout_count += 1
             else:
-                if left_rim_idx < 10:
-                    continue
-                if prices[left_rim_idx - 10] >= left_rim_price:
-                    continue
-                window_start = max(0, left_rim_idx - 5)
-                window_end = min(len(prices), left_rim_idx + 6)
-                if np.max(prices[window_start:window_end]) > left_rim_price:
-                    continue
+                breakout_count = 0
 
-            # ── Width check ──
-            cup_width = right_rim_idx - left_rim_idx
-            if cup_width < 15 or cup_width > len(prices) * 0.8:
-                continue
+            if breakout_count >= BREAKOUT_CONFIRM_CANDLES:
+                breakout_confirmed = True
+                breakout_start_idx = k - BREAKOUT_CONFIRM_CANDLES + 1
+                break
 
-            # ── Find deepest trough between rims ──
-            troughs_in_cup = [t for t in trough_indices
-                              if left_rim_idx < t < right_rim_idx]
-            if not troughs_in_cup:
-                continue
+        handle_low_price = current_handle_low
+        handle_low_idx = current_handle_low_idx
 
-            raw_prices_in_cup = prices[left_rim_idx:right_rim_idx]
-            cup_bottom_idx = left_rim_idx + int(np.argmin(raw_prices_in_cup))
-            cup_bottom_price = prices[cup_bottom_idx]
+        # ── Pause Before Breakout (Bug 3) ──
+        pause_duration = (breakout_start_idx - right_rim_idx) if breakout_confirmed else 0
 
-            # ── Minimum Cup Duration ──
-            cup_left_duration = cup_bottom_idx - left_rim_idx
-            cup_right_duration = right_rim_idx - cup_bottom_idx
-            if cup_left_duration < MIN_CUP_CANDLES or cup_right_duration < MIN_CUP_CANDLES:
-                continue
+        handle_slope = 0
+        if breakout_confirmed and pause_duration > 1:
+            pause_prices = prices[right_rim_idx : breakout_start_idx + 1]
+            res = linregress(np.arange(len(pause_prices)), pause_prices)
+            handle_slope = res.slope
 
-            # ── No Double-Dip ──
-            prices_after_bottom = prices[cup_bottom_idx:right_rim_idx + 1]
-            if len(prices_after_bottom) > 0 and np.min(prices_after_bottom) < cup_bottom_price:
-                continue
+        # ── Validation ──
+        base_zone_max = cup_bottom_price * (1 + BASE_ZONE_PCT)
+        cup_candles = prices[left_rim_idx:right_rim_idx]
+        base_candles_count = int(np.sum(cup_candles <= base_zone_max))
+        roundedness_pct = (base_candles_count / len(cup_candles)) if len(cup_candles) > 0 else 0
 
-            # ── Cup Symmetry ──
-            left_margin = left_rim_idx + cup_width * 0.15
-            right_margin = right_rim_idx - cup_width * 0.15
-            if not (left_margin <= cup_bottom_idx <= right_margin):
-                continue
+        cup_depth = left_rim_price - cup_bottom_price
+        max_handle_dip = HANDLE_MAX_RETRACE_RATIO * cup_depth
+        handle_pullback = right_rim_price - handle_low_price
+        handle_pullback_pct = (handle_pullback / right_rim_price) * 100
+        min_handle_pullback = right_rim_price * 0.01
+        handle_duration = handle_low_idx - right_rim_idx
 
-            # ── Cup depth check ──
-            cup_drop_pct = ((left_rim_price - cup_bottom_price)
-                            / left_rim_price) * 100
-            if not (MIN_CUP_DROP_PCT <= cup_drop_pct <= MAX_CUP_DROP_PCT):
-                continue
+        rim_ceiling = highs[left_rim_idx]
+        highs_inside_cup = highs[left_rim_idx + 1 : right_rim_idx]
+        closes_inside_cup = prices[left_rim_idx + 1 : right_rim_idx]
+        max_internal_high = np.max(highs_inside_cup) if len(highs_inside_cup) > 0 else 0
+        max_internal_close = np.max(closes_inside_cup) if len(closes_inside_cup) > 0 else 0
 
-            # ── Recovery check ──
-            recovery_pct = abs(right_rim_price - left_rim_price) / left_rim_price * 100
-            if recovery_pct > MAX_RECOVERY_GAP_PCT:
-                continue
+        cup_closes_for_diff = prices[left_rim_idx : right_rim_idx + 1]
+        if len(cup_closes_for_diff) > 1:
+            daily_returns = np.abs(np.diff(cup_closes_for_diff) / cup_closes_for_diff[:-1])
+            max_daily_jump = float(np.max(daily_returns))
+        else:
+            max_daily_jump = 0.0
 
-            # ── Handle detection (Bug 2/3 Fix) ──
-            if right_rim_idx + 1 >= len(prices):
-                continue
+        # ── Volume Confirmation ──
+        vol_decline_pass = None
+        vol_decline_avg = 0
+        vol_sma50 = 0
+        vol_recovery_pass = None
+        vol_recovery_ratio = 0
+        vol_breakout_pass = None
+        vol_breakout_avg = 0
 
-            old_handle_zone_end = min(right_rim_idx + max(1, cup_width // 4), len(prices) - 1)
-            old_handle_prices = prices[right_rim_idx : old_handle_zone_end + 1]
-            old_handle_low_price = np.min(old_handle_prices) if len(old_handle_prices) > 0 else right_rim_price
+        if volumes is not None and len(volumes) == len(prices):
+            vol_series = pd.Series(volumes)
+            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
 
-            current_handle_low = prices[right_rim_idx]
-            current_handle_low_idx = right_rim_idx
-            breakout_count = 0
-            breakout_confirmed = False
-            breakout_start_idx = -1
+            sma_idx = min(right_rim_idx, len(vol_sma) - 1)
+            vol_sma50 = vol_sma.iloc[sma_idx] if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-            for k in range(right_rim_idx + 1,
-                           min(len(prices), right_rim_idx + 1 + MAX_HANDLE_LOOKFORWARD_CANDLES)):
-                curr_price = prices[k]
+            if cup_bottom_idx > left_rim_idx and vol_sma50 > 0:
+                decline_vols = volumes[left_rim_idx:cup_bottom_idx + 1]
+                vol_decline_avg = float(np.mean(decline_vols))
+                vol_decline_pass = vol_decline_avg < vol_sma50
 
-                if curr_price < current_handle_low:
-                    current_handle_low = curr_price
-                    current_handle_low_idx = k
+            if right_rim_idx > cup_bottom_idx + 1:
+                recovery_closes = prices[cup_bottom_idx:right_rim_idx + 1]
+                recovery_vols = volumes[cup_bottom_idx:right_rim_idx + 1]
+                up_vol = 0.0
+                down_vol = 0.0
+                for rv_i in range(1, len(recovery_closes)):
+                    if recovery_closes[rv_i] > recovery_closes[rv_i - 1]:
+                        up_vol += recovery_vols[rv_i]
+                    else:
+                        down_vol += recovery_vols[rv_i]
+                vol_recovery_ratio = (up_vol / down_vol) if down_vol > 0 else (2.0 if up_vol > 0 else 0)
+                vol_recovery_pass = vol_recovery_ratio > 1.0
 
-                if curr_price > right_rim_price:
-                    breakout_count += 1
-                else:
-                    breakout_count = 0
+            if breakout_confirmed and breakout_start_idx > 0 and vol_sma50 > 0:
+                bo_end = min(breakout_start_idx + BREAKOUT_CONFIRM_CANDLES, len(volumes))
+                breakout_vols = volumes[breakout_start_idx:bo_end]
+                if len(breakout_vols) > 0:
+                    vol_breakout_avg = float(np.mean(breakout_vols))
+                    vol_breakout_pass = vol_breakout_avg > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-                if breakout_count >= BREAKOUT_CONFIRM_CANDLES:
-                    breakout_confirmed = True
-                    breakout_start_idx = k - BREAKOUT_CONFIRM_CANDLES + 1
-                    break
+        # ── Quality score ──
+        quality_score = compute_quality_score("cup_and_handle", {
+            "cup_drop_pct": cup_drop_pct,
+            "recovery_vol_ratio": vol_recovery_ratio if vol_recovery_ratio else 0,
+            "breakout_vol_ratio": (vol_breakout_avg / vol_sma50) if vol_sma50 > 0 else 0,
+        })
 
-            handle_low_price = current_handle_low
-            handle_low_idx = current_handle_low_idx
+        # ── Determine validity ──
+        is_valid = True
+        reject_reason = ""
 
-            # ── Pause Before Breakout (Bug 3) ──
-            pause_duration = (breakout_start_idx - right_rim_idx) if breakout_confirmed else 0
-
-            handle_slope = 0
-            if breakout_confirmed and pause_duration > 1:
-                pause_prices = prices[right_rim_idx : breakout_start_idx + 1]
-                res = linregress(np.arange(len(pause_prices)), pause_prices)
-                handle_slope = res.slope
-
-            # ── Validation ──
-            base_zone_max = cup_bottom_price * (1 + BASE_ZONE_PCT)
-            cup_candles = prices[left_rim_idx:right_rim_idx]
-            base_candles_count = int(np.sum(cup_candles <= base_zone_max))
-            roundedness_pct = (base_candles_count / len(cup_candles)) if len(cup_candles) > 0 else 0
-
-            cup_depth = left_rim_price - cup_bottom_price
-            max_handle_dip = HANDLE_MAX_RETRACE_RATIO * cup_depth
-            handle_pullback = right_rim_price - handle_low_price
-            handle_pullback_pct = (handle_pullback / right_rim_price) * 100
-            min_handle_pullback = right_rim_price * 0.01
-            handle_duration = handle_low_idx - right_rim_idx
-
-            rim_ceiling = highs[left_rim_idx]
-            highs_inside_cup = highs[left_rim_idx + 1 : right_rim_idx]
-            closes_inside_cup = prices[left_rim_idx + 1 : right_rim_idx]
-            max_internal_high = np.max(highs_inside_cup) if len(highs_inside_cup) > 0 else 0
-            max_internal_close = np.max(closes_inside_cup) if len(closes_inside_cup) > 0 else 0
-
-            cup_closes_for_diff = prices[left_rim_idx : right_rim_idx + 1]
-            if len(cup_closes_for_diff) > 1:
-                daily_returns = np.abs(np.diff(cup_closes_for_diff) / cup_closes_for_diff[:-1])
-                max_daily_jump = float(np.max(daily_returns))
-            else:
-                max_daily_jump = 0.0
-
-            # ── Volume Confirmation ──
-            vol_decline_pass = None
-            vol_decline_avg = 0
-            vol_sma50 = 0
-            vol_recovery_pass = None
-            vol_recovery_ratio = 0
-            vol_breakout_pass = None
-            vol_breakout_avg = 0
-
-            if volumes is not None and len(volumes) == len(prices):
-                vol_series = pd.Series(volumes)
-                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-
-                sma_idx = min(right_rim_idx, len(vol_sma) - 1)
-                vol_sma50 = vol_sma.iloc[sma_idx] if not pd.isna(vol_sma.iloc[sma_idx]) else 0
-
-                if cup_bottom_idx > left_rim_idx and vol_sma50 > 0:
-                    decline_vols = volumes[left_rim_idx:cup_bottom_idx + 1]
-                    vol_decline_avg = float(np.mean(decline_vols))
-                    vol_decline_pass = vol_decline_avg < vol_sma50
-
-                if right_rim_idx > cup_bottom_idx + 1:
-                    recovery_closes = prices[cup_bottom_idx:right_rim_idx + 1]
-                    recovery_vols = volumes[cup_bottom_idx:right_rim_idx + 1]
-                    up_vol = 0.0
-                    down_vol = 0.0
-                    for rv_i in range(1, len(recovery_closes)):
-                        if recovery_closes[rv_i] > recovery_closes[rv_i - 1]:
-                            up_vol += recovery_vols[rv_i]
-                        else:
-                            down_vol += recovery_vols[rv_i]
-                    vol_recovery_ratio = (up_vol / down_vol) if down_vol > 0 else (2.0 if up_vol > 0 else 0)
-                    vol_recovery_pass = vol_recovery_ratio > 1.0
-
-                if breakout_confirmed and breakout_start_idx > 0 and vol_sma50 > 0:
-                    bo_end = min(breakout_start_idx + BREAKOUT_CONFIRM_CANDLES, len(volumes))
-                    breakout_vols = volumes[breakout_start_idx:bo_end]
-                    if len(breakout_vols) > 0:
-                        vol_breakout_avg = float(np.mean(breakout_vols))
-                        vol_breakout_pass = vol_breakout_avg > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
-
-            # ── Quality score ──
-            quality_score = compute_quality_score("cup_and_handle", {
-                "cup_drop_pct": cup_drop_pct,
-                "recovery_vol_ratio": vol_recovery_ratio if vol_recovery_ratio else 0,
-                "breakout_vol_ratio": (vol_breakout_avg / vol_sma50) if vol_sma50 > 0 else 0,
-            })
-
-            # ── Determine validity ──
-            is_valid = True
-            reject_reason = ""
-
-            if max_internal_close > left_rim_price:
+        if max_internal_close > left_rim_price:
+            is_valid = False
+            reject_reason = (f"Internal close (₹{max_internal_close:.2f}) exceeded "
+                             f"Left Rim close (₹{left_rim_price:.2f}).")
+        elif max_internal_high > rim_ceiling:
+            is_valid = False
+            reject_reason = (f"Internal high (₹{max_internal_high:.2f}) exceeded "
+                             f"Left Rim High (₹{rim_ceiling:.2f}).")
+        elif max_daily_jump > MAX_DISCONTINUITY_PCT:
+            is_valid = False
+            reject_reason = (f"Excessive price discontinuity "
+                             f"({max_daily_jump*100:.1f}% > "
+                             f"{MAX_DISCONTINUITY_PCT*100}% limit).")
+        elif roundedness_pct < MIN_BASE_CANDLES_PCT:
+            is_valid = False
+            reject_reason = (f"V-shape recovery. Roundedness "
+                             f"{base_candles_count}/{len(cup_candles)} "
+                             f"({roundedness_pct*100:.1f}%) < "
+                             f"{MIN_BASE_CANDLES_PCT*100}% required.")
+        elif handle_pullback < min_handle_pullback:
+            is_valid = False
+            reject_reason = "Handle pullback too small (<1%)."
+        elif not breakout_confirmed:
+            is_valid = False
+            reject_reason = (f"No breakout confirmed within "
+                             f"{MAX_HANDLE_LOOKFORWARD_CANDLES} candles.")
+        elif pause_duration < MIN_PAUSE_CANDLES:
+            is_valid = False
+            reject_reason = (f"No real handle — immediate continuation "
+                             f"(breakout in {pause_duration} candles < "
+                             f"{MIN_PAUSE_CANDLES}).")
+        elif handle_slope > 0:
+            is_valid = False
+            reject_reason = (f"Handle is not a genuine pause (slope "
+                             f"{handle_slope:.2f} > 0).")
+        elif handle_pullback > max_handle_dip:
+            is_valid = False
+            reject_reason = (f"Handle pullback (₹{handle_pullback:.2f}) "
+                             f"exceeded 0.32× depth (₹{max_handle_dip:.2f}).")
+        elif handle_duration < MIN_HANDLE_CANDLES:
+            is_valid = False
+            reject_reason = f"Handle formed too quickly (<{MIN_HANDLE_CANDLES} candles)."
+        elif handle_duration > 0 and cup_width < 3 * handle_duration:
+            is_valid = False
+            reject_reason = "Cup duration must be at least 3x handle duration."
+        else:
+            rim_window_start = max(0, right_rim_idx - 2)
+            rim_window_end = min(len(prices), right_rim_idx + 3)
+            rim_window_prices = prices[rim_window_start:rim_window_end]
+            if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
                 is_valid = False
-                reject_reason = (f"Internal close (₹{max_internal_close:.2f}) exceeded "
-                                 f"Left Rim close (₹{left_rim_price:.2f}).")
-            elif max_internal_high > rim_ceiling:
-                is_valid = False
-                reject_reason = (f"Internal high (₹{max_internal_high:.2f}) exceeded "
-                                 f"Left Rim High (₹{rim_ceiling:.2f}).")
-            elif max_daily_jump > MAX_DISCONTINUITY_PCT:
-                is_valid = False
-                reject_reason = (f"Excessive price discontinuity "
-                                 f"({max_daily_jump*100:.1f}% > "
-                                 f"{MAX_DISCONTINUITY_PCT*100}% limit).")
-            elif roundedness_pct < MIN_BASE_CANDLES_PCT:
-                is_valid = False
-                reject_reason = (f"V-shape recovery. Roundedness "
-                                 f"{base_candles_count}/{len(cup_candles)} "
-                                 f"({roundedness_pct*100:.1f}%) < "
-                                 f"{MIN_BASE_CANDLES_PCT*100}% required.")
-            elif handle_pullback < min_handle_pullback:
-                is_valid = False
-                reject_reason = "Handle pullback too small (<1%)."
-            elif not breakout_confirmed:
-                is_valid = False
-                reject_reason = (f"No breakout confirmed within "
-                                 f"{MAX_HANDLE_LOOKFORWARD_CANDLES} candles.")
-            elif pause_duration < MIN_PAUSE_CANDLES:
-                is_valid = False
-                reject_reason = (f"No real handle — immediate continuation "
-                                 f"(breakout in {pause_duration} candles < "
-                                 f"{MIN_PAUSE_CANDLES}).")
-            elif handle_slope > 0:
-                is_valid = False
-                reject_reason = (f"Handle is not a genuine pause (slope "
-                                 f"{handle_slope:.2f} > 0).")
-            elif handle_pullback > max_handle_dip:
-                is_valid = False
-                reject_reason = (f"Handle pullback (₹{handle_pullback:.2f}) "
-                                 f"exceeded 0.32× depth (₹{max_handle_dip:.2f}).")
-            elif handle_duration < MIN_HANDLE_CANDLES:
-                is_valid = False
-                reject_reason = f"Handle formed too quickly (<{MIN_HANDLE_CANDLES} candles)."
-            elif handle_duration > 0 and cup_width < 3 * handle_duration:
-                is_valid = False
-                reject_reason = "Cup duration must be at least 3x handle duration."
-            else:
-                rim_window_start = max(0, right_rim_idx - 2)
-                rim_window_end = min(len(prices), right_rim_idx + 3)
-                rim_window_prices = prices[rim_window_start:rim_window_end]
-                if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
-                    is_valid = False
-                    reject_reason = "Right rim is too spiky (failed stability check)."
+                reject_reason = "Right rim is too spiky (failed stability check)."
 
-            if not is_valid and not verbose:
-                continue
+        if not is_valid and not verbose:
+            continue
 
-            # ── Build pattern dict ──
-            pattern = {
-                "pattern_type":        "cup_and_handle",
-                "ticker":              ticker,
-                "left_rim_price":      round(float(left_rim_price), 2),
-                "cup_bottom_price":    round(float(cup_bottom_price), 2),
-                "right_rim_price":     round(float(right_rim_price), 2),
-                "handle_low_price":    round(float(handle_low_price), 2),
-                "cup_drop_pct":        round(float(cup_drop_pct), 2),
-                "recovery_pct":        round(float(recovery_pct), 2),
-                "cup_depth":           round(float(cup_depth), 2),
-                "max_handle_dip":      round(float(max_handle_dip), 2),
-                "handle_pullback":     round(float(handle_pullback), 2),
-                "handle_pullback_pct": round(float(handle_pullback_pct), 2),
-                "left_rim_idx":        int(left_rim_idx),
-                "cup_bottom_idx":      int(cup_bottom_idx),
-                "right_rim_idx":       int(right_rim_idx),
-                "handle_low_idx":      int(handle_low_idx),
-                "cup_left_duration":   int(cup_left_duration),
-                "cup_right_duration":  int(cup_right_duration),
-                "handle_duration":     int(handle_duration),
-                "double_dip_passed":   True,
-                "roundedness_pct":     round(float(roundedness_pct * 100), 1),
-                "base_candles":        int(base_candles_count),
-                "cup_width":           int(len(cup_candles)),
-                "old_handle_low":      round(float(old_handle_low_price), 2),
-                "breakout_confirmed":  breakout_confirmed,
-                "pause_duration":      int(pause_duration),
-                "handle_slope":        round(float(handle_slope), 4),
-                "reject_reason":       reject_reason,
-                "quality_score":       quality_score if is_valid else 0,
-                "vol_decline_avg":     round(float(vol_decline_avg), 0),
-                "vol_sma50":           round(float(vol_sma50), 0),
-                "vol_decline_pass":    vol_decline_pass,
-                "vol_recovery_ratio":  round(float(vol_recovery_ratio), 2),
-                "vol_recovery_pass":   vol_recovery_pass,
-                "vol_breakout_avg":    round(float(vol_breakout_avg), 0),
-                "vol_breakout_pass":   vol_breakout_pass,
-                "smoothing_method":    f"SMA({SMOOTHING_WINDOW})",
-            }
+        # ── Build pattern dict ──
+        pattern = {
+            "pattern_type":        "cup_and_handle",
+            "ticker":              ticker,
+            "left_rim_price":      round(float(left_rim_price), 2),
+            "cup_bottom_price":    round(float(cup_bottom_price), 2),
+            "right_rim_price":     round(float(right_rim_price), 2),
+            "handle_low_price":    round(float(handle_low_price), 2),
+            "cup_drop_pct":        round(float(cup_drop_pct), 2),
+            "recovery_pct":        round(float(recovery_pct), 2),
+            "cup_depth":           round(float(cup_depth), 2),
+            "max_handle_dip":      round(float(max_handle_dip), 2),
+            "handle_pullback":     round(float(handle_pullback), 2),
+            "handle_pullback_pct": round(float(handle_pullback_pct), 2),
+            "left_rim_idx":        int(left_rim_idx),
+            "cup_bottom_idx":      int(cup_bottom_idx),
+            "right_rim_idx":       int(right_rim_idx),
+            "handle_low_idx":      int(handle_low_idx),
+            "cup_left_duration":   int(cup_left_duration),
+            "cup_right_duration":  int(cup_right_duration),
+            "handle_duration":     int(handle_duration),
+            "double_dip_passed":   True,
+            "roundedness_pct":     round(float(roundedness_pct * 100), 1),
+            "base_candles":        int(base_candles_count),
+            "cup_width":           int(len(cup_candles)),
+            "old_handle_low":      round(float(old_handle_low_price), 2),
+            "breakout_confirmed":  breakout_confirmed,
+            "pause_duration":      int(pause_duration),
+            "handle_slope":        round(float(handle_slope), 4),
+            "reject_reason":       reject_reason,
+            "quality_score":       quality_score if is_valid else 0,
+            "vol_decline_avg":     round(float(vol_decline_avg), 0),
+            "vol_sma50":           round(float(vol_sma50), 0),
+            "vol_decline_pass":    vol_decline_pass,
+            "vol_recovery_ratio":  round(float(vol_recovery_ratio), 2),
+            "vol_recovery_pass":   vol_recovery_pass,
+            "vol_breakout_avg":    round(float(vol_breakout_avg), 0),
+            "vol_breakout_pass":   vol_breakout_pass,
+            "smoothing_method":    f"SMA({SMOOTHING_WINDOW})",
+        }
 
-            if dates is not None:
-                pattern["left_rim_date"]   = str(dates[left_rim_idx])
-                pattern["cup_bottom_date"] = str(dates[cup_bottom_idx])
-                pattern["right_rim_date"]  = str(dates[right_rim_idx])
-                pattern["handle_low_date"] = str(dates[handle_low_idx])
-                if breakout_confirmed and breakout_start_idx > 0:
-                    pattern["signal_date"] = str(dates[breakout_start_idx])
+        if dates is not None:
+            pattern["left_rim_date"]   = str(dates[left_rim_idx])
+            pattern["cup_bottom_date"] = str(dates[cup_bottom_idx])
+            pattern["right_rim_date"]  = str(dates[right_rim_idx])
+            pattern["handle_low_date"] = str(dates[handle_low_idx])
+            if breakout_confirmed and breakout_start_idx > 0:
+                pattern["signal_date"] = str(dates[breakout_start_idx])
 
-            if not is_valid and verbose:
-                print_cup_and_handle(pattern, index="REJECTED")
-                continue
+        if not is_valid and verbose:
+            print_cup_and_handle(pattern, index="REJECTED")
+            continue
 
-            candidates.append(pattern)
+        candidates.append(pattern)
 
     # ── Overlap Deduplication ──
     OVERLAP_TOLERANCE = 10
@@ -852,20 +833,14 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
 # =============================================================================
 
 def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
-                     interval="1d", verbose=False):
+                     interval="1d", verbose=False, structural_cache=None):
     """
-    Detects Bull Flag patterns: a strong upward pole → tight downward/flat
-    consolidation (flag) → breakout above the pole top.
-
-    Smoothing: NO — uses linregress directly on raw prices.
-
-    Theory
-    ------
-    A bull flag is a continuation pattern. After a sharp rally (the "pole"),
-    the stock pauses in a tight, slightly downward-drifting channel (the
-    "flag"). Sellers can't push prices down much, and when buyers return,
-    the stock breaks out above the pole top and continues rising.
+    Detects Bull Flag patterns using structural_cache.
     """
+    from scipy.stats import linregress
+    import numpy as np
+    import pandas as pd
+    
     prices = np.array(prices, dtype=float)
     if volumes is not None:
         volumes = np.array(volumes, dtype=float)
@@ -874,8 +849,84 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     if n < 30:
         return []
 
-    # Pre-filter: find candidate pole-end positions using rolling min
-    # This avoids testing every single index as a pole end.
+    # Fast Path: Cache Hit
+    patterns_found = []
+    cache_hit = False
+    
+    if structural_cache is not None and "bull_flag_pairs" in structural_cache and dates is not None:
+        try:
+            for cached_pat in structural_cache["bull_flag_pairs"]:
+                pole_start_idx = dates.get_loc(pd.Timestamp(cached_pat["pole_start_date"]))
+                pole_end_idx = dates.get_loc(pd.Timestamp(cached_pat["pole_top_date"]))
+                flag_end_idx = dates.get_loc(pd.Timestamp(cached_pat["flag_end_date"]))
+                
+                pole_top_price = cached_pat["pole_top_price"]
+                
+                breakout_idx = None
+                for k in range(flag_end_idx + 1, min(n, flag_end_idx + 6)):
+                    if prices[k] > pole_top_price:
+                        breakout_idx = k
+                        break
+                        
+                if breakout_idx is None:
+                    continue
+                    
+                # Breakout found from cache
+                vol_sma50 = 0
+                vol_pole_pass = None
+                vol_flag_pass = None
+                vol_breakout_pass = None
+
+                if volumes is not None and len(volumes) == n:
+                    vol_series = pd.Series(volumes)
+                    vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                    sma_idx = min(pole_end_idx, len(vol_sma) - 1)
+                    vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+
+                    if vol_sma50 > 0:
+                        pole_vol = float(np.mean(volumes[pole_start_idx:pole_end_idx + 1]))
+                        vol_pole_pass = pole_vol > vol_sma50
+
+                        flag_vol = float(np.mean(volumes[pole_end_idx + 1:flag_end_idx + 1]))
+                        vol_flag_pass = flag_vol < vol_sma50
+
+                        breakout_vol = float(volumes[breakout_idx])
+                        vol_breakout_pass = breakout_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+                if REQUIRE_BREAKOUT_VOLUME and vol_breakout_pass is False:
+                    continue
+                    
+                quality = compute_quality_score("bull_flag", {
+                    "pole_change_pct": cached_pat["pole_rise_pct"],
+                    "r_squared": cached_pat["pole_r_squared"],
+                    "flag_range_pct": cached_pat["flag_range_pct"],
+                    "vol_pole_pass": vol_pole_pass,
+                    "vol_flag_pass": vol_flag_pass,
+                    "vol_breakout_pass": vol_breakout_pass,
+                })
+                
+                pat = cached_pat.copy()
+                pat["breakout_idx"] = breakout_idx
+                pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+                pat["vol_pole_pass"] = vol_pole_pass
+                pat["vol_flag_pass"] = vol_flag_pass
+                pat["vol_breakout_pass"] = vol_breakout_pass
+                pat["quality_score"] = quality
+                pat["signal_date"] = str(dates[breakout_idx])
+                patterns_found.append(pat)
+            
+            cache_hit = True
+            
+        except KeyError:
+            patterns_found = []
+            cache_hit = False
+
+    if cache_hit:
+        patterns_found.sort(key=lambda p: p.get("quality_score", 0), reverse=True)
+        return patterns_found
+
+
+    # Slow Path: Full Detection
     rolling_min = pd.Series(prices).rolling(window=MAX_POLE_CANDLES, min_periods=5).min().values
     potential_return = np.zeros(n)
     for idx in range(MAX_POLE_CANDLES, n):
@@ -883,13 +934,12 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             potential_return[idx] = (prices[idx] - rolling_min[idx]) / rolling_min[idx] * 100
     potential_pole_ends = np.where(potential_return >= MIN_POLE_RISE_PCT)[0]
 
-    candidates = []
+    valid_structures = []
 
     for pole_end_idx in potential_pole_ends:
         if pole_end_idx >= n - MIN_FLAG_CANDLES - 1:
             continue
 
-        # Find the best pole for this pole_end position
         best_pole = None
         for pole_len in range(5, min(MAX_POLE_CANDLES + 1, pole_end_idx + 1)):
             pole_start_idx = pole_end_idx - pole_len
@@ -900,7 +950,6 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if rise_pct < MIN_POLE_RISE_PCT:
                 continue
 
-            # Rec A: reject slow-grind poles — must be a sharp thrust
             rise_per_day = rise_pct / pole_len
             if rise_per_day < MIN_POLE_SLOPE_PCT_PER_DAY:
                 continue
@@ -925,7 +974,6 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
         if best_pole is None:
             continue
 
-        # Look for flag after pole
         pole_top_price = prices[pole_end_idx]
 
         for flag_len in range(MIN_FLAG_CANDLES, min(MAX_FLAG_CANDLES + 1, n - pole_end_idx)):
@@ -941,76 +989,23 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             flag_high = float(np.max(flag_prices))
             flag_low = float(np.min(flag_prices))
 
-            # Fix 1: reject if any flag bar already broke above the pole top
-            if flag_high > pole_top_price * 1.001:   # small tolerance for float noise
+            if flag_high > pole_top_price * 1.001:
                 continue
 
             flag_range_pct = (flag_high - flag_low) / pole_top_price * 100
-
             if flag_range_pct > FLAG_CHANNEL_PCT:
                 continue
 
-            # Fix 2: flag must not retrace more than MAX_RETRACEMENT_PCT of the pole
             pole_size = pole_top_price - prices[best_pole["start_idx"]]
             retracement_pct = (pole_top_price - flag_low) / pole_size * 100 if pole_size > 0 else 0
             if retracement_pct > MAX_RETRACEMENT_PCT:
                 continue
 
-            # Flag should slope downward or be essentially flat
             x = np.arange(len(flag_prices))
             flag_res = linregress(x, flag_prices)
             flag_total_drift_pct = (flag_res.slope * len(flag_prices)) / pole_top_price * 100
-            if flag_total_drift_pct > 0.5:  # allow up to 0.5% total upward drift
+            if flag_total_drift_pct > 0.5:
                 continue
-
-            # Check for breakout: price closes above pole top
-            breakout_idx = None
-            for k in range(flag_end + 1, min(n, flag_end + 6)):
-                if prices[k] > pole_top_price:
-                    breakout_idx = k
-                    break
-
-            if breakout_idx is None:
-                if verbose:
-                    print(f"  ❌ {ticker}: Bull Flag pole found (idx {best_pole['start_idx']}-"
-                          f"{pole_end_idx}, +{best_pole['rise_pct']:.1f}%) but no breakout.")
-                continue
-
-            # Volume checks
-            vol_sma50 = 0
-            vol_pole_pass = None
-            vol_flag_pass = None
-            vol_breakout_pass = None
-
-            if volumes is not None and len(volumes) == n:
-                vol_series = pd.Series(volumes)
-                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-                sma_idx = min(pole_end_idx, len(vol_sma) - 1)
-                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
-
-                if vol_sma50 > 0:
-                    pole_vol = float(np.mean(volumes[best_pole["start_idx"]:pole_end_idx + 1]))
-                    vol_pole_pass = pole_vol > vol_sma50
-
-                    flag_vol = float(np.mean(volumes[flag_start:flag_end + 1]))
-                    vol_flag_pass = flag_vol < vol_sma50
-
-                    breakout_vol = float(volumes[breakout_idx])
-                    vol_breakout_pass = breakout_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
-
-            # Rec D: optional hard gate on breakout volume
-            if REQUIRE_BREAKOUT_VOLUME and vol_breakout_pass is False:
-                continue
-
-            # Quality score
-            quality = compute_quality_score("bull_flag", {
-                "pole_change_pct": best_pole["rise_pct"],
-                "r_squared": best_pole["r_squared"],
-                "flag_range_pct": flag_range_pct,
-                "vol_pole_pass": vol_pole_pass,
-                "vol_flag_pass": vol_flag_pass,
-                "vol_breakout_pass": vol_breakout_pass,
-            })
 
             pattern = {
                 "pattern_type":       "bull_flag",
@@ -1021,70 +1016,103 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 "pole_top_price":     round(float(pole_top_price), 2),
                 "flag_low_price":     round(float(flag_low), 2),
                 "flag_high_price":    round(float(flag_high), 2),
-                "breakout_price":     round(float(prices[breakout_idx]), 2),
                 "pole_rise_pct":      round(float(best_pole["rise_pct"]), 2),
                 "pole_r_squared":     round(float(best_pole["r_squared"]), 3),
                 "flag_range_pct":     round(float(flag_range_pct), 2),
                 "flag_slope":         round(float(flag_res.slope), 4),
-                "vol_pole_pass":      vol_pole_pass,
-                "vol_flag_pass":      vol_flag_pass,
-                "vol_breakout_pass":  vol_breakout_pass,
-                "quality_score":      quality,
                 "pole_start_idx":     best_pole["start_idx"],
                 "pole_end_idx":       pole_end_idx,
                 "flag_start_idx":     flag_start,
                 "flag_end_idx":       flag_end,
-                "breakout_idx":       breakout_idx,
                 "retracement_pct":    round(float(retracement_pct), 2),
             }
 
             if dates is not None:
                 pattern["pole_start_date"] = str(dates[best_pole["start_idx"]])
                 pattern["pole_top_date"]   = str(dates[pole_end_idx])
-                pattern["flag_low_date"]   = str(dates[flag_start + int(np.argmin(flag_prices))])
-                pattern["breakout_date"]   = str(dates[breakout_idx])
-                pattern["signal_date"]     = str(dates[breakout_idx])
+                pattern["flag_end_date"]   = str(dates[flag_end])
+            
+            valid_structures.append(pattern)
 
-            candidates.append(pattern)
-            break  # Found valid flag for this pole, move on
+    # Populate cache if requested
+    if structural_cache is not None and isinstance(structural_cache, dict):
+        structural_cache["bull_flag_pairs"] = valid_structures
 
-    # Deduplication
-    candidates.sort(key=lambda p: p["quality_score"], reverse=True)
-    patterns_found = []
-    claimed = []
-
-    for c in candidates:
-        is_dup = False
-        for (cs, ce) in claimed:
-            if abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakout_idx"] - ce) <= 10:
-                is_dup = True
+    # Now evaluate breakouts on all valid structures
+    for pat in valid_structures:
+        flag_end = pat["flag_end_idx"]
+        pole_top_price = pat["pole_top_price"]
+        breakout_idx = None
+        for k in range(flag_end + 1, min(n, flag_end + 6)):
+            if prices[k] > pole_top_price:
+                breakout_idx = k
                 break
-        if not is_dup:
-            patterns_found.append(c)
-            claimed.append((c["pole_start_idx"], c["breakout_idx"]))
 
+        if breakout_idx is None:
+            if verbose:
+                print(f"  ❌ {ticker}: Bull Flag pole found (idx {pat['pole_start_idx']}-"
+                      f"{pat['pole_end_idx']}, +{pat['pole_rise_pct']:.1f}%) but no breakout.")
+            continue
+            
+        vol_sma50 = 0
+        vol_pole_pass = None
+        vol_flag_pass = None
+        vol_breakout_pass = None
+
+        if volumes is not None and len(volumes) == n:
+            vol_series = pd.Series(volumes)
+            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+            sma_idx = min(pat["pole_end_idx"], len(vol_sma) - 1)
+            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+
+            if vol_sma50 > 0:
+                pole_vol = float(np.mean(volumes[pat["pole_start_idx"]:pat["pole_end_idx"] + 1]))
+                vol_pole_pass = pole_vol > vol_sma50
+
+                flag_vol = float(np.mean(volumes[pat["pole_end_idx"] + 1:pat["flag_end_idx"] + 1]))
+                vol_flag_pass = flag_vol < vol_sma50
+
+                breakout_vol = float(volumes[breakout_idx])
+                vol_breakout_pass = breakout_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+        if REQUIRE_BREAKOUT_VOLUME and vol_breakout_pass is False:
+            continue
+            
+        quality = compute_quality_score("bull_flag", {
+            "pole_change_pct": pat["pole_rise_pct"],
+            "r_squared": pat["pole_r_squared"],
+            "flag_range_pct": pat["flag_range_pct"],
+            "vol_pole_pass": vol_pole_pass,
+            "vol_flag_pass": vol_flag_pass,
+            "vol_breakout_pass": vol_breakout_pass,
+        })
+        
+        pat = pat.copy()
+        pat["breakout_idx"] = breakout_idx
+        pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+        pat["vol_pole_pass"] = vol_pole_pass
+        pat["vol_flag_pass"] = vol_flag_pass
+        pat["vol_breakout_pass"] = vol_breakout_pass
+        pat["quality_score"] = quality
+        
+        if dates is not None:
+            pat["signal_date"] = str(dates[breakout_idx])
+            
+        patterns_found.append(pat)
+
+    patterns_found.sort(key=lambda p: p.get("quality_score", 0), reverse=True)
     return patterns_found
 
-
 # =============================================================================
-#  7. DETECT BEAR FLAG
-# =============================================================================
-
 def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
-                     interval="1d", verbose=False):
+                     interval="1d", verbose=False, structural_cache=None):
     """
-    Detects Bear Flag patterns: a strong downward pole → tight upward/flat
-    consolidation (flag) → breakdown below the pole bottom.
-
-    Smoothing: NO — uses linregress directly on raw prices.
-
-    Theory
-    ------
-    A bear flag is the mirror image of a bull flag. After a sharp selloff
-    (the pole), the stock drifts upward slightly in a tight channel (the
-    flag — a weak relief bounce). When sellers return, the stock breaks
-    down below the pole bottom and continues falling.
+    Detects Bear Flag patterns using structural_cache.
     """
+    from scipy.stats import linregress
+    import numpy as np
+    import pandas as pd
+    
     prices = np.array(prices, dtype=float)
     if volumes is not None:
         volumes = np.array(volumes, dtype=float)
@@ -1093,7 +1121,95 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     if n < 30:
         return []
 
-    # Pre-filter: find candidate pole-end positions using rolling max
+    # Fast Path: Cache Hit
+    patterns_found = []
+    cache_hit = False
+    
+    if structural_cache is not None and "bear_flag_pairs" in structural_cache and dates is not None:
+        try:
+            for cached_pat in structural_cache["bear_flag_pairs"]:
+                pole_start_idx = dates.get_loc(pd.Timestamp(cached_pat["pole_start_date"]))
+                pole_end_idx = dates.get_loc(pd.Timestamp(cached_pat["pole_bottom_date"]))
+                flag_end_idx = dates.get_loc(pd.Timestamp(cached_pat["flag_end_date"]))
+                
+                pole_bottom_price = cached_pat["pole_bottom_price"]
+                
+                breakdown_idx = None
+                for k in range(flag_end_idx + 1, min(n, flag_end_idx + 6)):
+                    if prices[k] < pole_bottom_price:
+                        breakdown_idx = k
+                        break
+                        
+                if breakdown_idx is None:
+                    continue
+                    
+                # Breakdown found from cache
+                vol_sma50 = 0
+                vol_pole_pass = None
+                vol_flag_pass = None
+                vol_breakdown_pass = None
+
+                if volumes is not None and len(volumes) == n:
+                    vol_series = pd.Series(volumes)
+                    vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                    sma_idx = min(pole_end_idx, len(vol_sma) - 1)
+                    vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+
+                    if vol_sma50 > 0:
+                        pole_vol = float(np.mean(volumes[pole_start_idx:pole_end_idx + 1]))
+                        vol_pole_pass = pole_vol > vol_sma50
+
+                        flag_vol = float(np.mean(volumes[pole_end_idx + 1:flag_end_idx + 1]))
+                        vol_flag_pass = flag_vol < vol_sma50
+
+                        bd_vol = float(volumes[breakdown_idx])
+                        vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+                if REQUIRE_BREAKOUT_VOLUME and vol_breakdown_pass is False:
+                    continue
+                    
+                quality = compute_quality_score("bear_flag", {
+                    "pole_change_pct": cached_pat["pole_drop_pct"],
+                    "r_squared": cached_pat["pole_r_squared"],
+                    "flag_range_pct": cached_pat["flag_range_pct"],
+                    "vol_pole_pass": vol_pole_pass,
+                    "vol_flag_pass": vol_flag_pass,
+                    "vol_breakout_pass": vol_breakdown_pass,
+                })
+                
+                pat = cached_pat.copy()
+                pat["breakdown_idx"] = breakdown_idx
+                pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2)
+                pat["vol_pole_pass"] = vol_pole_pass
+                pat["vol_flag_pass"] = vol_flag_pass
+                pat["vol_breakdown_pass"] = vol_breakdown_pass
+                pat["quality_score"] = quality
+                pat["signal_date"] = str(dates[breakdown_idx])
+                patterns_found.append(pat)
+            
+            cache_hit = True
+            
+        except KeyError:
+            patterns_found = []
+            cache_hit = False
+
+    if cache_hit:
+        # Deduplication
+        patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
+        final_patterns = []
+        claimed = []
+        for c in patterns_found:
+            is_dup = False
+            for (cs, ce) in claimed:
+                if abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakdown_idx"] - ce) <= 10:
+                    is_dup = True
+                    break
+            if not is_dup:
+                final_patterns.append(c)
+                claimed.append((c["pole_start_idx"], c["breakdown_idx"]))
+        return final_patterns
+
+    # Slow Path: Full Detection
     rolling_max = pd.Series(prices).rolling(window=MAX_POLE_CANDLES, min_periods=5).max().values
     potential_drop = np.zeros(n)
     for idx in range(MAX_POLE_CANDLES, n):
@@ -1101,7 +1217,7 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             potential_drop[idx] = (rolling_max[idx] - prices[idx]) / rolling_max[idx] * 100
     potential_pole_ends = np.where(potential_drop >= MIN_POLE_DROP_PCT)[0]
 
-    candidates = []
+    valid_structures = []
 
     for pole_end_idx in potential_pole_ends:
         if pole_end_idx >= n - MIN_FLAG_CANDLES - 1:
@@ -1117,7 +1233,6 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if drop_pct < MIN_POLE_DROP_PCT:
                 continue
 
-            # Rec A: reject slow-grind poles — must be a sharp drop
             drop_per_day = drop_pct / pole_len
             if drop_per_day < MIN_POLE_SLOPE_PCT_PER_DAY:
                 continue
@@ -1157,72 +1272,23 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             flag_high = float(np.max(flag_prices))
             flag_low = float(np.min(flag_prices))
 
-            # Fix 1: reject if any flag bar already broke below the pole bottom
-            if flag_low < pole_bottom_price * 0.999:   # small tolerance for float noise
+            if flag_low < pole_bottom_price * 0.999:
                 continue
 
             flag_range_pct = (flag_high - flag_low) / pole_bottom_price * 100
-
             if flag_range_pct > FLAG_CHANNEL_PCT:
                 continue
 
-            # Fix 2: flag must not retrace more than MAX_RETRACEMENT_PCT of the pole
             pole_size = prices[best_pole["start_idx"]] - pole_bottom_price
             retracement_pct = (flag_high - pole_bottom_price) / pole_size * 100 if pole_size > 0 else 0
             if retracement_pct > MAX_RETRACEMENT_PCT:
                 continue
 
-            # Flag should slope upward or be flat (bear flag relief bounce)
             x = np.arange(len(flag_prices))
             flag_res = linregress(x, flag_prices)
             flag_total_drift_pct = (flag_res.slope * len(flag_prices)) / pole_bottom_price * 100
-            if flag_total_drift_pct < -0.5:  # too much downward drift
+            if flag_total_drift_pct < -0.5:
                 continue
-
-            # Breakdown: price closes below pole bottom
-            breakdown_idx = None
-            for k in range(flag_end + 1, min(n, flag_end + 6)):
-                if prices[k] < pole_bottom_price:
-                    breakdown_idx = k
-                    break
-
-            if breakdown_idx is None:
-                continue
-
-            # Volume checks
-            vol_sma50 = 0
-            vol_pole_pass = None
-            vol_flag_pass = None
-            vol_breakdown_pass = None
-
-            if volumes is not None and len(volumes) == n:
-                vol_series = pd.Series(volumes)
-                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-                sma_idx = min(pole_end_idx, len(vol_sma) - 1)
-                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
-
-                if vol_sma50 > 0:
-                    pole_vol = float(np.mean(volumes[best_pole["start_idx"]:pole_end_idx + 1]))
-                    vol_pole_pass = pole_vol > vol_sma50
-
-                    flag_vol = float(np.mean(volumes[flag_start:flag_end + 1]))
-                    vol_flag_pass = flag_vol < vol_sma50
-
-                    bd_vol = float(volumes[breakdown_idx])
-                    vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
-
-            # Rec D: optional hard gate on breakdown volume
-            if REQUIRE_BREAKOUT_VOLUME and vol_breakdown_pass is False:
-                continue
-
-            quality = compute_quality_score("bear_flag", {
-                "pole_change_pct": best_pole["drop_pct"],
-                "r_squared": best_pole["r_squared"],
-                "flag_range_pct": flag_range_pct,
-                "vol_pole_pass": vol_pole_pass,
-                "vol_flag_pass": vol_flag_pass,
-                "vol_breakout_pass": vol_breakdown_pass,
-            })
 
             pattern = {
                 "pattern_type":       "bear_flag",
@@ -1233,64 +1299,113 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 "pole_bottom_price":  round(float(pole_bottom_price), 2),
                 "flag_high_price":    round(float(flag_high), 2),
                 "flag_low_price":     round(float(flag_low), 2),
-                "breakdown_price":    round(float(prices[breakdown_idx]), 2),
                 "pole_drop_pct":      round(float(best_pole["drop_pct"]), 2),
                 "pole_r_squared":     round(float(best_pole["r_squared"]), 3),
                 "flag_range_pct":     round(float(flag_range_pct), 2),
                 "flag_slope":         round(float(flag_res.slope), 4),
-                "vol_pole_pass":      vol_pole_pass,
-                "vol_flag_pass":      vol_flag_pass,
-                "vol_breakdown_pass": vol_breakdown_pass,
-                "quality_score":      quality,
                 "pole_start_idx":     best_pole["start_idx"],
                 "pole_end_idx":       pole_end_idx,
                 "flag_start_idx":     flag_start,
                 "flag_end_idx":       flag_end,
-                "breakdown_idx":      breakdown_idx,
                 "retracement_pct":    round(float(retracement_pct), 2),
             }
 
             if dates is not None:
                 pattern["pole_start_date"]  = str(dates[best_pole["start_idx"]])
                 pattern["pole_bottom_date"] = str(dates[pole_end_idx])
-                pattern["flag_high_date"]   = str(dates[flag_start + int(np.argmax(flag_prices))])
-                pattern["breakdown_date"]   = str(dates[breakdown_idx])
-                pattern["signal_date"]      = str(dates[breakdown_idx])
-
-            candidates.append(pattern)
+                pattern["flag_end_date"]    = str(dates[flag_end])
+                
+            valid_structures.append(pattern)
             break
 
-    # Deduplication
-    candidates.sort(key=lambda p: p["quality_score"], reverse=True)
-    patterns_found = []
-    claimed = []
+    if structural_cache is not None and isinstance(structural_cache, dict):
+        structural_cache["bear_flag_pairs"] = valid_structures
 
-    for c in candidates:
+    # Evaluate breakdowns on all valid structures
+    for pat in valid_structures:
+        flag_end = pat["flag_end_idx"]
+        pole_bottom_price = pat["pole_bottom_price"]
+        breakdown_idx = None
+        for k in range(flag_end + 1, min(n, flag_end + 6)):
+            if prices[k] < pole_bottom_price:
+                breakdown_idx = k
+                break
+
+        if breakdown_idx is None:
+            continue
+            
+        vol_sma50 = 0
+        vol_pole_pass = None
+        vol_flag_pass = None
+        vol_breakdown_pass = None
+
+        if volumes is not None and len(volumes) == n:
+            vol_series = pd.Series(volumes)
+            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+            sma_idx = min(pat["pole_end_idx"], len(vol_sma) - 1)
+            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+
+            if vol_sma50 > 0:
+                pole_vol = float(np.mean(volumes[pat["pole_start_idx"]:pat["pole_end_idx"] + 1]))
+                vol_pole_pass = pole_vol > vol_sma50
+
+                flag_vol = float(np.mean(volumes[pat["pole_end_idx"] + 1:pat["flag_end_idx"] + 1]))
+                vol_flag_pass = flag_vol < vol_sma50
+
+                bd_vol = float(volumes[breakdown_idx])
+                vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+        if REQUIRE_BREAKOUT_VOLUME and vol_breakdown_pass is False:
+            continue
+            
+        quality = compute_quality_score("bear_flag", {
+            "pole_change_pct": pat["pole_drop_pct"],
+            "r_squared": pat["pole_r_squared"],
+            "flag_range_pct": pat["flag_range_pct"],
+            "vol_pole_pass": vol_pole_pass,
+            "vol_flag_pass": vol_flag_pass,
+            "vol_breakout_pass": vol_breakdown_pass,
+        })
+        
+        pat = pat.copy()
+        pat["breakdown_idx"] = breakdown_idx
+        pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2)
+        pat["vol_pole_pass"] = vol_pole_pass
+        pat["vol_flag_pass"] = vol_flag_pass
+        pat["vol_breakdown_pass"] = vol_breakdown_pass
+        pat["quality_score"] = quality
+        
+        if dates is not None:
+            pat["signal_date"] = str(dates[breakdown_idx])
+            
+        patterns_found.append(pat)
+
+    # Deduplication
+    patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
+    final_patterns = []
+    claimed = []
+    for c in patterns_found:
         is_dup = False
         for (cs, ce) in claimed:
             if abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakdown_idx"] - ce) <= 10:
                 is_dup = True
                 break
         if not is_dup:
-            patterns_found.append(c)
+            final_patterns.append(c)
             claimed.append((c["pole_start_idx"], c["breakdown_idx"]))
 
-    return patterns_found
-
+    return final_patterns
 
 # =============================================================================
-#  8. DETECT PENNANT
-# =============================================================================
-
 def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN", dates=None,
-                   interval="1d", verbose=False):
+                   interval="1d", verbose=False, structural_cache=None):
     """
-    Detects Pennant patterns with strict algorithmic constraints:
-    - Flagpole Condition: Price changes by X% within Y periods. ADX > 30.
-    - Consolidation Geometry: 5 to 20 candles. Upper slope < 0, Lower slope > 0. Converging.
-    - Volume Profile: Strictly diminishing during consolidation, below 20-day SMA.
-    - Trigger Event: Close > Upper trendline (bullish) or < Lower trendline (bearish), Vol > 1.5x SMA.
+    Detects Pennant patterns with strict algorithmic constraints.
     """
+    from scipy.stats import linregress
+    import numpy as np
+    import pandas as pd
+    
     prices = np.array(prices, dtype=float)
     if highs is None: highs = prices
     if lows is None: lows = prices
@@ -1304,17 +1419,106 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
     if n < 30:
         return []
         
-    candidates = []
-    
-    # Pre-calculate ADX and Volume SMA20
-    adx_arr = compute_adx(highs, lows, prices, period=14)
     vol_sma20 = None
     if volumes is not None:
         vol_series = pd.Series(volumes)
         vol_sma20 = vol_series.rolling(window=20, min_periods=5).mean().values
+
+    # Fast Path: Cache Hit
+    patterns_found = []
+    cache_hit = False
+
+    if structural_cache is not None and "pennant_pairs" in structural_cache and dates is not None:
+        try:
+            for cached_pat in structural_cache["pennant_pairs"]:
+                pole_start_idx = dates.get_loc(pd.Timestamp(cached_pat["pole_start_date"]))
+                pole_end_idx = dates.get_loc(pd.Timestamp(cached_pat["pole_end_date"]))
+                pennant_start = dates.get_loc(pd.Timestamp(cached_pat["pennant_start_date"]))
+                pennant_end = dates.get_loc(pd.Timestamp(cached_pat["pennant_end_date"]))
+                
+                pole_direction = cached_pat["direction"]
+                res_high_intercept = float(cached_pat["res_high_intercept"])
+                res_low_intercept = float(cached_pat["res_low_intercept"])
+                upper_slope = float(cached_pat["upper_slope"])
+                lower_slope = float(cached_pat["lower_slope"])
+                
+                breakout_idx = None
+                vol_breakout_pass = False
+                
+                for k in range(pennant_end + 1, min(n, pennant_end + 6)):
+                    rel_k = k - pennant_start
+                    upper_tl_val = res_high_intercept + upper_slope * rel_k
+                    lower_tl_val = res_low_intercept + lower_slope * rel_k
+                    
+                    if pole_direction == "bullish" and prices[k] > upper_tl_val:
+                        if volumes is not None and vol_sma20 is not None:
+                            if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
+                                breakout_idx = k
+                                vol_breakout_pass = True
+                                break
+                        else:
+                            breakout_idx = k
+                            vol_breakout_pass = True
+                            break
+                            
+                    elif pole_direction == "bearish" and prices[k] < lower_tl_val:
+                        if volumes is not None and vol_sma20 is not None:
+                            if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
+                                breakout_idx = k
+                                vol_breakout_pass = True
+                                break
+                        else:
+                            breakout_idx = k
+                            vol_breakout_pass = True
+                            break
+                            
+                if breakout_idx is None:
+                    continue
+                    
+                quality = compute_quality_score("pennant", {
+                    "pole_change_pct": cached_pat["pole_change_pct"],
+                    "convergence_ratio": cached_pat["convergence_ratio"],
+                    "r_squared": cached_pat.get("r_squared", 0.9),
+                    "vol_pole_pass": True,
+                    "vol_pennant_pass": cached_pat["vol_pennant_pass"],
+                    "vol_breakout_pass": vol_breakout_pass,
+                })
+                
+                pat = cached_pat.copy()
+                pat["breakout_idx"] = breakout_idx
+                pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+                pat["vol_breakout_pass"] = vol_breakout_pass
+                pat["quality_score"] = quality
+                pat["signal_date"] = str(dates[breakout_idx])
+                patterns_found.append(pat)
+
+            cache_hit = True
+
+        except KeyError:
+            patterns_found = []
+            cache_hit = False
+
+    if cache_hit:
+        patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
+        final_patterns = []
+        claimed = []
+        for c in patterns_found:
+            is_dup = False
+            for (cs, ce) in claimed:
+                if abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakout_idx"] - ce) <= 10:
+                    is_dup = True
+                    break
+            if not is_dup:
+                final_patterns.append(c)
+                claimed.append((c["pole_start_idx"], c["breakout_idx"]))
+        return final_patterns
+
+
+    # Slow Path: Full Detection
+    adx_arr = compute_adx(highs, lows, prices, period=14)
+    valid_structures = []
         
     for pole_end_idx in range(PENNANT_POLE_PERIODS, n - MIN_PENNANT_CANDLES - 1):
-        # 1. Flagpole Condition
         pole_start_idx = pole_end_idx - PENNANT_POLE_PERIODS
         change_pct = (prices[pole_end_idx] - prices[pole_start_idx]) / prices[pole_start_idx] * 100
         
@@ -1324,14 +1528,12 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
         if not is_bullish and not is_bearish:
             continue
             
-        # ADX must be > 30 at the pole's extreme
         pole_adx = adx_arr[pole_end_idx]
         if np.isnan(pole_adx) or pole_adx <= PENNANT_ADX_THRESHOLD:
             continue
             
         pole_direction = "bullish" if is_bullish else "bearish"
         
-        # 2. Consolidation Geometry
         max_pennant_len = min(MAX_PENNANT_CANDLES, n - pole_end_idx - 2)
         if max_pennant_len < MIN_PENNANT_CANDLES:
             continue
@@ -1343,7 +1545,6 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             pennant_highs = highs[pennant_start:pennant_end + 1]
             pennant_lows = lows[pennant_start:pennant_end + 1]
             
-            # Linear regression on highs and lows
             x = np.arange(len(pennant_highs))
             res_high = linregress(x, pennant_highs)
             res_low = linregress(x, pennant_lows)
@@ -1351,18 +1552,15 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             upper_slope = res_high.slope
             lower_slope = res_low.slope
             
-            # Strict geometry constraints
             if upper_slope >= 0 or lower_slope <= 0:
                 continue
                 
-            # Must converge
             dist_start = res_high.intercept - res_low.intercept
             dist_end = (res_high.intercept + upper_slope * len(x)) - (res_low.intercept + lower_slope * len(x))
             
             if dist_end >= dist_start:
                 continue
                 
-            # 3. Volume Profile during consolidation
             vol_pennant_pass = False
             if volumes is not None and vol_sma20 is not None:
                 pennant_vols = volumes[pennant_start:pennant_end + 1]
@@ -1370,58 +1568,14 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 avg_pennant_vol = np.mean(pennant_vols)
                 sma20_at_end = vol_sma20[pennant_end]
                 
-                # Volume must be diminishing (slope < 0) AND average below 20-day SMA
                 if res_vol.slope < 0 and avg_pennant_vol < sma20_at_end:
                     vol_pennant_pass = True
             else:
-                vol_pennant_pass = True # Pass if no volume data
+                vol_pennant_pass = True 
                 
             if not vol_pennant_pass:
                 continue
                 
-            # 4. Trigger Event
-            breakout_idx = None
-            vol_breakout_pass = False
-            
-            for k in range(pennant_end + 1, min(n, pennant_end + 6)):
-                rel_k = k - pennant_start
-                upper_tl_val = res_high.intercept + upper_slope * rel_k
-                lower_tl_val = res_low.intercept + lower_slope * rel_k
-                
-                if pole_direction == "bullish" and prices[k] > upper_tl_val:
-                    if volumes is not None and vol_sma20 is not None:
-                        if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
-                            breakout_idx = k
-                            vol_breakout_pass = True
-                            break
-                    else:
-                        breakout_idx = k
-                        vol_breakout_pass = True
-                        break
-                        
-                elif pole_direction == "bearish" and prices[k] < lower_tl_val:
-                    if volumes is not None and vol_sma20 is not None:
-                        if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
-                            breakout_idx = k
-                            vol_breakout_pass = True
-                            break
-                    else:
-                        breakout_idx = k
-                        vol_breakout_pass = True
-                        break
-                        
-            if breakout_idx is None:
-                continue
-                
-            quality = compute_quality_score("pennant", {
-                "pole_change_pct": change_pct,
-                "convergence_ratio": dist_end / dist_start if dist_start > 0 else 1.0,
-                "r_squared": res_high.rvalue**2,
-                "vol_pole_pass": True,
-                "vol_pennant_pass": vol_pennant_pass,
-                "vol_breakout_pass": vol_breakout_pass,
-            })
-            
             pattern = {
                 "pattern_type":       "pennant",
                 "ticker":             ticker,
@@ -1432,20 +1586,19 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 "pole_end_price":     round(float(prices[pole_end_idx]), 2),
                 "pennant_high":       round(float(np.max(pennant_highs)), 2),
                 "pennant_low":        round(float(np.min(pennant_lows)), 2),
-                "breakout_price":     round(float(prices[breakout_idx]), 2),
                 "pole_change_pct":    round(float(change_pct), 2),
                 "adx_value":          round(float(pole_adx), 2),
-                "upper_slope":        round(float(upper_slope), 4),
-                "lower_slope":        round(float(lower_slope), 4),
+                "upper_slope":        float(upper_slope),
+                "lower_slope":        float(lower_slope),
+                "res_high_intercept": float(res_high.intercept),
+                "res_low_intercept":  float(res_low.intercept),
                 "convergence_ratio":  round(float(dist_end / dist_start if dist_start > 0 else 1.0), 3),
+                "r_squared":          round(float(res_high.rvalue**2), 3),
                 "vol_pennant_pass":   vol_pennant_pass,
-                "vol_breakout_pass":  vol_breakout_pass,
-                "quality_score":      quality,
                 "pole_start_idx":     pole_start_idx,
                 "pole_end_idx":       pole_end_idx,
                 "pennant_start_idx":  pennant_start,
                 "pennant_end_idx":    pennant_end,
-                "breakout_idx":       breakout_idx,
             }
 
             if dates is not None:
@@ -1453,55 +1606,104 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 pattern["pole_end_date"]      = str(dates[pole_end_idx])
                 pattern["pennant_start_date"] = str(dates[pennant_start])
                 pattern["pennant_end_date"]   = str(dates[pennant_end])
-                pattern["breakout_date"]      = str(dates[breakout_idx])
-                pattern["signal_date"]        = str(dates[breakout_idx])
-
-            candidates.append(pattern)
+                
+            valid_structures.append(pattern)
             break 
 
+    if structural_cache is not None and isinstance(structural_cache, dict):
+        structural_cache["pennant_pairs"] = valid_structures
+
+    # Evaluate breakouts on all valid structures
+    for pat in valid_structures:
+        pennant_end = pat["pennant_end_idx"]
+        pennant_start = pat["pennant_start_idx"]
+        pole_direction = pat["direction"]
+        res_high_intercept = pat["res_high_intercept"]
+        res_low_intercept = pat["res_low_intercept"]
+        upper_slope = pat["upper_slope"]
+        lower_slope = pat["lower_slope"]
+
+        breakout_idx = None
+        vol_breakout_pass = False
+
+        for k in range(pennant_end + 1, min(n, pennant_end + 6)):
+            rel_k = k - pennant_start
+            upper_tl_val = res_high_intercept + upper_slope * rel_k
+            lower_tl_val = res_low_intercept + lower_slope * rel_k
+            
+            if pole_direction == "bullish" and prices[k] > upper_tl_val:
+                if volumes is not None and vol_sma20 is not None:
+                    if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
+                        breakout_idx = k
+                        vol_breakout_pass = True
+                        break
+                else:
+                    breakout_idx = k
+                    vol_breakout_pass = True
+                    break
+                    
+            elif pole_direction == "bearish" and prices[k] < lower_tl_val:
+                if volumes is not None and vol_sma20 is not None:
+                    if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
+                        breakout_idx = k
+                        vol_breakout_pass = True
+                        break
+                else:
+                    breakout_idx = k
+                    vol_breakout_pass = True
+                    break
+
+        if breakout_idx is None:
+            continue
+            
+        quality = compute_quality_score("pennant", {
+            "pole_change_pct": pat["pole_change_pct"],
+            "convergence_ratio": pat["convergence_ratio"],
+            "r_squared": pat["r_squared"],
+            "vol_pole_pass": True,
+            "vol_pennant_pass": pat["vol_pennant_pass"],
+            "vol_breakout_pass": vol_breakout_pass,
+        })
+        
+        pat = pat.copy()
+        pat["breakout_idx"] = breakout_idx
+        pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+        pat["vol_breakout_pass"] = vol_breakout_pass
+        pat["quality_score"] = quality
+        
+        if dates is not None:
+            pat["signal_date"] = str(dates[breakout_idx])
+            pat["breakout_date"] = str(dates[breakout_idx])
+            
+        patterns_found.append(pat)
+
     # Deduplication
-    candidates.sort(key=lambda p: p["quality_score"], reverse=True)
-    patterns_found = []
+    patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
+    final_patterns = []
     claimed = []
 
-    for c in candidates:
+    for c in patterns_found:
         is_dup = False
         for (cs, ce) in claimed:
             if abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakout_idx"] - ce) <= 10:
                 is_dup = True
                 break
         if not is_dup:
-            patterns_found.append(c)
+            final_patterns.append(c)
             claimed.append((c["pole_start_idx"], c["breakout_idx"]))
 
-    return patterns_found
-
+    return final_patterns
 
 # =============================================================================
-#  9. DETECT HEAD AND SHOULDERS
-# =============================================================================
-
 def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN",
-                               dates=None, interval="1d", verbose=False):
+                               dates=None, interval="1d", verbose=False, structural_cache=None):
     """
-    Detects Head and Shoulders reversal patterns: three successive peaks
-    where the middle (head) is higher than the two outer ones (shoulders),
-    with a neckline connecting the two troughs. Breakdown below the
-    neckline signals a trend reversal from uptrend to downtrend.
-
-    Smoothing: YES — uses smooth_prices() + find_peaks() to detect peaks
-    and troughs. All reported prices are RAW.
-
-    Theory
-    ------
-    The H&S pattern forms at the TOP of an uptrend:
-    - Left Shoulder: buyers push price to a high, then it pulls back
-    - Head: buyers push even higher, but it pulls back again
-    - Right Shoulder: buyers try again but can't reach the head's height
-    The declining buying power (shoulder → head → shoulder with weakening
-    volume) shows distribution. When price breaks below the neckline
-    connecting the two pullback lows, sellers take control.
+    Detects Head and Shoulders reversal patterns.
     """
+    import numpy as np
+    import pandas as pd
+    from scipy.signal import find_peaks
+    
     prices = np.array(prices, dtype=float)
     if volumes is not None:
         volumes = np.array(volumes, dtype=float)
@@ -1510,7 +1712,79 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
     if n < 40:
         return []
 
-    # ── Smooth and find peaks/troughs ──
+    # Fast Path: Cache Hit
+    patterns_found = []
+    cache_hit = False
+
+    if structural_cache is not None and "hs_structures" in structural_cache and dates is not None:
+        try:
+            for cached_pat in structural_cache["hs_structures"]:
+                ls_idx = dates.get_loc(pd.Timestamp(cached_pat["left_shoulder_date"]))
+                head_idx = dates.get_loc(pd.Timestamp(cached_pat["head_date"]))
+                rs_idx = dates.get_loc(pd.Timestamp(cached_pat["right_shoulder_date"]))
+                left_neck_idx = dates.get_loc(pd.Timestamp(cached_pat["left_neckline_date"]))
+                
+                left_neck_price = cached_pat["left_neckline_price"]
+                neckline_slope = cached_pat["neckline_slope"]
+                
+                breakdown_idx = None
+                for k in range(rs_idx + 1, min(n, rs_idx + 30)):
+                    neckline_at_k = left_neck_price + neckline_slope * (k - left_neck_idx)
+                    if prices[k] < neckline_at_k:
+                        breakdown_idx = k
+                        break
+
+                if breakdown_idx is None:
+                    continue
+
+                vol_breakdown_pass = None
+                if volumes is not None:
+                    vol_sma50 = cached_pat.get("vol_sma50", 0)
+                    if vol_sma50 > 0:
+                        bd_vol = float(volumes[breakdown_idx])
+                        vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+                quality = compute_quality_score("head_and_shoulders", {
+                    "head_prominence_pct": cached_pat["head_prom_pct"],
+                    "shoulder_symmetry_pct": cached_pat["shoulder_symmetry_pct"],
+                    "neckline_slope_pct": cached_pat["neckline_slope_pct"],
+                    "vol_progression_pass": cached_pat["vol_progression_pass"],
+                    "vol_breakdown_pass": vol_breakdown_pass,
+                })
+
+                pat = cached_pat.copy()
+                pat["breakdown_idx"] = breakdown_idx
+                pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2)
+                pat["vol_breakdown_pass"] = vol_breakdown_pass
+                pat["quality_score"] = quality
+                pat["signal_date"] = str(dates[breakdown_idx])
+                pat["breakdown_date"] = str(dates[breakdown_idx])
+                
+                patterns_found.append(pat)
+
+            cache_hit = True
+
+        except KeyError:
+            patterns_found = []
+            cache_hit = False
+
+    if cache_hit:
+        patterns_found.sort(key=lambda p: (p["head_price"], p["quality_score"]), reverse=True)
+        final_patterns = []
+        claimed = []
+        for c in patterns_found:
+            is_dup = False
+            for (ch, cr) in claimed:
+                if abs(c["head_idx"] - ch) <= 10 and abs(c["right_shoulder_idx"] - cr) <= 10:
+                    is_dup = True
+                    break
+            if not is_dup:
+                final_patterns.append(c)
+                claimed.append((c["head_idx"], c["right_shoulder_idx"]))
+        return final_patterns
+
+
+    # Slow Path: Full Detection
     smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
     min_prominence = np.median(smoothed) * 0.01
 
@@ -1520,9 +1794,8 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
     if len(peak_indices) < 3 or len(trough_indices) < 2:
         return []
 
-    candidates = []
+    valid_structures = []
 
-    # Evaluate every triplet of peaks
     for i in range(len(peak_indices) - 2):
         for j in range(i + 1, len(peak_indices) - 1):
             for k in range(j + 1, len(peak_indices)):
@@ -1541,13 +1814,10 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                 head_price = prices[head_idx]
                 rs_price = prices[rs_idx]
 
-
-                # Duration check
                 span = rs_idx - ls_idx
                 if span < MIN_HS_CANDLES:
                     continue
 
-                # Internal spacing checks
                 ls_to_head = head_idx - ls_idx
                 head_to_rs = rs_idx - head_idx
         
@@ -1556,31 +1826,26 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                 if head_to_rs < MIN_HEAD_TO_RS_CANDLES or head_to_rs > MAX_HEAD_TO_RS_CANDLES:
                     continue
             
-                # Time-ratio symmetry check
                 duration_ratio = ls_to_head / head_to_rs if head_to_rs > 0 else 0
                 if not (0.6 <= duration_ratio <= 1.66):
                     continue
 
-                # Head must be higher than both shoulders
                 ls_prominence = (head_price - ls_price) / ls_price * 100
                 rs_prominence = (head_price - rs_price) / rs_price * 100
 
                 if ls_prominence < HEAD_SHOULDER_RATIO or rs_prominence < HEAD_SHOULDER_RATIO:
                     continue
 
-                # Shoulder symmetry
                 shoulder_diff_pct = abs(ls_price - rs_price) / ls_price * 100
                 if shoulder_diff_pct > SHOULDER_SYMMETRY_PCT:
                     continue
 
-                # Find neckline troughs
                 left_troughs = [t for t in trough_indices if ls_idx < t < head_idx]
                 right_troughs = [t for t in trough_indices if head_idx < t < rs_idx]
 
                 if not left_troughs or not right_troughs:
                     continue
 
-                # Use deepest trough in each gap
                 left_trough_approx = min(left_troughs, key=lambda t: prices[t])
                 right_trough_approx = min(right_troughs, key=lambda t: prices[t])
         
@@ -1590,61 +1855,38 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                 left_neck_price = prices[left_neck_idx]
                 right_neck_price = prices[right_neck_idx]
 
-                # Circuit limit gap filter (organic formation check)
                 if head_idx - left_neck_idx < 3 or right_neck_idx - head_idx < 3:
                     continue
 
-                # Trough proximity constraint (troughs must be close in price)
                 trough_diff_pct = abs(left_neck_price - right_neck_price) / max(left_neck_price, right_neck_price) * 100
                 if trough_diff_pct > TROUGH_MAX_DIFF_PCT:
                     continue
 
-                # Vertical Depth (ATR filter)
                 if highs is not None and lows is not None:
-                    # Calculate ATR up to the right shoulder to represent current volatility
                     atr = compute_atr(highs[:rs_idx+1], lows[:rs_idx+1], prices[:rs_idx+1])
                     if atr > 0:
                         head_depth = head_price - min(left_neck_price, right_neck_price)
                         if head_depth < ATR_HS_MULTIPLIER * atr:
                             continue
 
-                # Neckline-proximity constraint (max depth)
                 lower_shoulder = min(ls_price, rs_price)
                 left_trough_depth_pct = (lower_shoulder - left_neck_price) / lower_shoulder
                 right_trough_depth_pct = (lower_shoulder - right_neck_price) / lower_shoulder
         
-                # Log the depth for diagnostic tuning
-                print(f"  [H&S Trough Check] {ticker} | Left Trough: {left_trough_depth_pct*100:.1f}%, Right Trough: {right_trough_depth_pct*100:.1f}%")
-        
                 if left_trough_depth_pct > TROUGH_MAX_DEPTH_PCT or right_trough_depth_pct > TROUGH_MAX_DEPTH_PCT:
                     continue
 
-                # Neckline slope
                 neck_span = right_neck_idx - left_neck_idx
                 if neck_span <= 0:
                     continue
                 neckline_slope = (right_neck_price - left_neck_price) / neck_span
                 neckline_slope_pct = abs(right_neck_price - left_neck_price) / left_neck_price * 100
 
-                # Breakdown check: price closes below neckline after right shoulder
-                breakdown_idx = None
-                for k in range(rs_idx + 1, min(n, rs_idx + 30)):
-                    # Projected neckline level at position k
-                    neckline_at_k = left_neck_price + neckline_slope * (k - left_neck_idx)
-                    if prices[k] < neckline_at_k:
-                        breakdown_idx = k
-                        break
-
-                if breakdown_idx is None:
-                    continue
-
-                # Volume checks
                 vol_sma50 = 0
                 vol_ls_avg = 0
                 vol_head_avg = 0
                 vol_rs_avg = 0
                 vol_progression_pass = None
-                vol_breakdown_pass = None
 
                 if volumes is not None and len(volumes) == n:
                     vol_series = pd.Series(volumes)
@@ -1652,7 +1894,6 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                     sma_idx = min(rs_idx, len(vol_sma) - 1)
                     vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-                    # Volume around each peak (±3 candles)
                     def avg_vol_around(idx, radius=3):
                         start = max(0, idx - radius)
                         end = min(n, idx + radius + 1)
@@ -1662,23 +1903,9 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                     vol_head_avg = avg_vol_around(head_idx)
                     vol_rs_avg = avg_vol_around(rs_idx)
 
-                    # Volume progression: LS > Head > RS (declining) is ideal
                     vol_progression_pass = (vol_ls_avg > vol_head_avg > vol_rs_avg)
 
-                    if vol_sma50 > 0:
-                        bd_vol = float(volumes[breakdown_idx])
-                        vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
-
-                # Head prominence for scoring (average of both sides)
                 head_prom_pct = (ls_prominence + rs_prominence) / 2
-
-                quality = compute_quality_score("head_and_shoulders", {
-                    "head_prominence_pct": head_prom_pct,
-                    "shoulder_symmetry_pct": shoulder_diff_pct,
-                    "neckline_slope_pct": neckline_slope_pct,
-                    "vol_progression_pass": vol_progression_pass,
-                    "vol_breakdown_pass": vol_breakdown_pass,
-                })
 
                 pattern = {
                     "pattern_type":          "head_and_shoulders",
@@ -1690,25 +1917,23 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                     "right_shoulder_price":  round(float(rs_price), 2),
                     "left_neckline_price":   round(float(left_neck_price), 2),
                     "right_neckline_price":  round(float(right_neck_price), 2),
-                    "breakdown_price":       round(float(prices[breakdown_idx]), 2),
                     "head_vs_ls_pct":        round(float(ls_prominence), 2),
                     "head_vs_rs_pct":        round(float(rs_prominence), 2),
                     "shoulder_symmetry_pct": round(float(shoulder_diff_pct), 2),
-                    "neckline_slope":        round(float(neckline_slope), 4),
+                    "neckline_slope":        float(neckline_slope),
                     "neckline_slope_pct":    round(float(neckline_slope_pct), 2),
                     "span_candles":          int(span),
                     "vol_ls_avg":            round(float(vol_ls_avg), 0),
                     "vol_head_avg":          round(float(vol_head_avg), 0),
                     "vol_rs_avg":            round(float(vol_rs_avg), 0),
                     "vol_progression_pass":  vol_progression_pass,
-                    "vol_breakdown_pass":    vol_breakdown_pass,
-                    "quality_score":         quality,
+                    "vol_sma50":             vol_sma50,
+                    "head_prom_pct":         head_prom_pct,
                     "left_shoulder_idx":     int(ls_idx),
                     "head_idx":              int(head_idx),
                     "right_shoulder_idx":    int(rs_idx),
                     "left_neckline_idx":     int(left_neck_idx),
                     "right_neckline_idx":    int(right_neck_idx),
-                    "breakdown_idx":         int(breakdown_idx),
                 }
 
                 if dates is not None:
@@ -1717,32 +1942,112 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                     pattern["right_shoulder_date"] = str(dates[rs_idx])
                     pattern["left_neckline_date"]  = str(dates[left_neck_idx])
                     pattern["right_neckline_date"] = str(dates[right_neck_idx])
-                    pattern["breakdown_date"]      = str(dates[breakdown_idx])
-                    pattern["signal_date"]         = str(dates[breakdown_idx])
 
-                candidates.append(pattern)
+                valid_structures.append(pattern)
+
+    if structural_cache is not None and isinstance(structural_cache, dict):
+        structural_cache["hs_structures"] = valid_structures
+
+    # Evaluate breakdowns on all valid structures
+    for pat in valid_structures:
+        rs_idx = pat["right_shoulder_idx"]
+        left_neck_idx = pat["left_neckline_idx"]
+        left_neck_price = pat["left_neckline_price"]
+        neckline_slope = pat["neckline_slope"]
+
+        breakdown_idx = None
+        for k in range(rs_idx + 1, min(n, rs_idx + 30)):
+            neckline_at_k = left_neck_price + neckline_slope * (k - left_neck_idx)
+            if prices[k] < neckline_at_k:
+                breakdown_idx = k
+                break
+
+        if breakdown_idx is None:
+            continue
+
+        vol_breakdown_pass = None
+        if volumes is not None:
+            vol_sma50 = pat.get("vol_sma50", 0)
+            if vol_sma50 > 0:
+                bd_vol = float(volumes[breakdown_idx])
+                vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+        quality = compute_quality_score("head_and_shoulders", {
+            "head_prominence_pct": pat["head_prom_pct"],
+            "shoulder_symmetry_pct": pat["shoulder_symmetry_pct"],
+            "neckline_slope_pct": pat["neckline_slope_pct"],
+            "vol_progression_pass": pat["vol_progression_pass"],
+            "vol_breakdown_pass": vol_breakdown_pass,
+        })
+
+        pat = pat.copy()
+        pat["breakdown_idx"] = breakdown_idx
+        pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2)
+        pat["vol_breakdown_pass"] = vol_breakdown_pass
+        pat["quality_score"] = quality
+
+        if dates is not None:
+            pat["signal_date"] = str(dates[breakdown_idx])
+            pat["breakdown_date"] = str(dates[breakdown_idx])
+            
+        patterns_found.append(pat)
 
     # Deduplication
-    candidates.sort(key=lambda p: (p["head_price"], p["quality_score"]), reverse=True)
-    patterns_found = []
+    patterns_found.sort(key=lambda p: (p["head_price"], p["quality_score"]), reverse=True)
+    final_patterns = []
     claimed = []
 
-    for c in candidates:
+    for c in patterns_found:
         is_dup = False
         for (ch, cr) in claimed:
             if abs(c["head_idx"] - ch) <= 10 and abs(c["right_shoulder_idx"] - cr) <= 10:
                 is_dup = True
                 break
         if not is_dup:
-            patterns_found.append(c)
+            final_patterns.append(c)
             claimed.append((c["head_idx"], c["right_shoulder_idx"]))
 
-    return patterns_found
+    return final_patterns
 
+def compute_ema(prices, period=50):
+    prices = np.array(prices, dtype=float)
+    if len(prices) < period:
+        return np.full_like(prices, np.nan)
+    return pd.Series(prices).ewm(span=period, adjust=False).mean().values
 
-# =============================================================================
-#  HELPERS FOR DOUBLE TOP / DOUBLE BOTTOM
-# =============================================================================
+def compute_rsi(prices, period=14):
+    prices = np.array(prices, dtype=float)
+    if len(prices) <= period:
+        return np.full_like(prices, np.nan)
+    delta = np.diff(prices)
+    gain = np.where(delta > 0, delta, 0)
+    loss = np.where(delta < 0, -delta, 0)
+    
+    avg_gain = np.zeros_like(prices)
+    avg_loss = np.zeros_like(prices)
+    
+    avg_gain[period] = np.mean(gain[:period])
+    avg_loss[period] = np.mean(loss[:period])
+    
+    for i in range(period + 1, len(prices)):
+        avg_gain[i] = (avg_gain[i - 1] * (period - 1) + gain[i - 1]) / period
+        avg_loss[i] = (avg_loss[i - 1] * (period - 1) + loss[i - 1]) / period
+        
+    rs = np.zeros_like(prices)
+    rsi = np.zeros_like(prices)
+    
+    # Avoid division by zero
+    mask = avg_loss > 0
+    rs[mask] = avg_gain[mask] / avg_loss[mask]
+    rsi[mask] = 100 - (100 / (1 + rs[mask]))
+    
+    # If loss is 0, RSI is 100
+    rsi[~mask & (avg_gain > 0)] = 100
+    
+    # For initial periods
+    rsi[:period] = np.nan
+    
+    return rsi
 
 def compute_atr(highs, lows, closes, period=ATR_PERIOD):
     """
@@ -1940,71 +2245,100 @@ def refine_trough(idx, prices, window=4):
 #  10. DETECT DOUBLE TOP
 # =============================================================================
 
-def detect_double_top(prices, volumes=None, ticker="UNKNOWN", dates=None,
-                      interval="1d", verbose=False,
-                      adj_close=None, highs=None, lows=None):
+
+# =============================================================================
+def detect_double_top(prices, volumes=None, ticker="UNKNOWN", dates=None, interval="1d", verbose=False, structural_cache=None):
     """
-    Detects Double Top reversal patterns with all 9 required rules:
-
-    1. Prior uptrend (linreg on Adj Close, slope > 0, R² > 0.5)
-    2. Valley drop ≥ 10% below first peak
-    3. Min 14 calendar days between peaks
-    4. Peak similarity ≤ 3%
-    5. Neckline = valley low between the two peaks
-    6. Decisive close below neckline (0.5% margin, 2 sustained candles)
-    7. Time-decay: max 10 candles after second peak for breakdown
-    8. ATR-based profit target and stop-loss
-    9. Volume: declining T1→T2 (informational), breakdown spike (hard reject)
-
-    Smoothing: YES — uses smooth_prices() + find_peaks() for peak detection.
-    All reported prices are RAW.
-
-    Parameters
-    ----------
-    prices : array-like
-        Close prices.
-    volumes : array-like, optional
-        Volume data.
-    ticker : str
-        Ticker symbol.
-    dates : array-like, optional
-        Date index.
-    interval : str
-        Candle interval (e.g., "1d", "15m").
-    verbose : bool
-        If True, also prints REJECTED and FORMING patterns.
-    adj_close : array-like, optional
-        Adjusted Close prices for prior-trend check (avoids split/dividend
-        distortion). Falls back to raw Close if not provided.
-    highs : array-like, optional
-        High prices for ATR calculation.
-    lows : array-like, optional
-        Low prices for ATR calculation.
-
-    Returns
-    -------
-    list[dict]
-        Detected Double Top patterns with verdict, metrics, and trade levels.
+    Detects Double Top reversal patterns.
     """
+    import numpy as np
+    import pandas as pd
+    from scipy.signal import find_peaks
+
     prices = np.array(prices, dtype=float)
     if volumes is not None:
         volumes = np.array(volumes, dtype=float)
-    # Adjusted Close: use if provided, else fall back to raw Close
-    trend_prices = np.array(adj_close, dtype=float) if adj_close is not None else prices.copy()
-    if highs is not None:
-        highs = np.array(highs, dtype=float)
-    else:
-        highs = prices.copy()
-    if lows is not None:
-        lows = np.array(lows, dtype=float)
-    else:
-        lows = prices.copy()
 
     n = len(prices)
     if n < 30:
         return []
 
-    # ── Smooth and find peaks ──
+    # Fast Path: Cache Hit
+    patterns_found = []
+    cache_hit = False
+
+    if structural_cache is not None and "double_top_structures" in structural_cache and dates is not None:
+        try:
+            for cached_pat in structural_cache["double_top_structures"]:
+                top1_idx = dates.get_loc(pd.Timestamp(cached_pat["first_top_date"]))
+                valley_idx = dates.get_loc(pd.Timestamp(cached_pat["valley_date"]))
+                top2_idx = dates.get_loc(pd.Timestamp(cached_pat["second_top_date"]))
+                
+                valley_price = cached_pat["valley_price"]
+                
+                breakdown_idx = None
+                for k in range(top2_idx + 1, min(n, top2_idx + 30)):
+                    if prices[k] < valley_price:
+                        breakdown_idx = k
+                        break
+
+                status = "confirmed"
+                stage = ""
+                if breakdown_idx is None:
+                    status = "forming"
+                    stage = "Stage C - Second peak formed, awaiting confirmation: Price touched first peak, hasn't broken neckline"
+                    breakdown_idx = n - 1
+
+                vol_breakdown_pass = None
+                if volumes is not None:
+                    vol_sma50 = cached_pat.get("vol_sma50", 0)
+                    if vol_sma50 > 0:
+                        bd_vol = float(volumes[breakdown_idx])
+                        vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+                quality = compute_quality_score("double_top", {
+                    "similarity_pct": cached_pat["similarity_pct"],
+                    "depth_pct": cached_pat["valley_drop_pct"],
+                    "vol_pattern_pass": cached_pat["vol_pattern_pass"],
+                    "vol_breakout_pass": vol_breakdown_pass,
+                })
+
+                pat = cached_pat.copy()
+                pat["breakdown_idx"] = breakdown_idx
+                pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2) if status == "confirmed" else None
+                pat["vol_breakdown_pass"] = vol_breakdown_pass
+                pat["quality_score"] = quality
+                pat["status"] = status
+                pat["stage"] = stage
+                if status == "confirmed":
+                    pat["signal_date"] = str(dates[breakdown_idx])
+                    pat["breakdown_date"] = str(dates[breakdown_idx])
+                
+                patterns_found.append(pat)
+
+            cache_hit = True
+
+        except KeyError:
+            patterns_found = []
+            cache_hit = False
+
+    if cache_hit:
+        patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
+        final_patterns = []
+        claimed = []
+        for c in patterns_found:
+            is_dup = False
+            for (c1, c2) in claimed:
+                if abs(c["first_top_idx"] - c1) <= 10 and abs(c["second_top_idx"] - c2) <= 10:
+                    is_dup = True
+                    break
+            if not is_dup:
+                final_patterns.append(c)
+                claimed.append((c["first_top_idx"], c["second_top_idx"]))
+        return final_patterns
+
+
+    # Slow Path: Full Detection
     smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
     min_prominence = np.median(smoothed) * 0.01
     peak_indices, _ = find_peaks(smoothed, distance=8, prominence=min_prominence)
@@ -2012,245 +2346,140 @@ def detect_double_top(prices, volumes=None, ticker="UNKNOWN", dates=None,
     if len(peak_indices) < 2:
         return []
 
-    # Convert MIN_PEAK_GAP_DAYS to candle count for this interval
-    cpd = interval_to_candles_per_day(interval)
-    min_gap_candles = max(2, int(round(MIN_PEAK_GAP_DAYS * cpd)))
-
+    valid_structures = []
     candidates = []
 
-    for i in range(len(peak_indices) - 1):
-        for j in range(i + 1, len(peak_indices)):
-            top1_approx = peak_indices[i]
-            top2_approx = peak_indices[j]
-            
-            top1_idx = refine_peak(top1_approx, prices, window=4)
-            top2_idx = refine_peak(top2_approx, prices, window=4)
-            
-            if top1_idx >= top2_idx:
-                continue
+    for i in range(len(peak_indices)):
+        top1_idx = peak_indices[i]
+        top2_candidates = []
+        if i + 1 < len(peak_indices):
+            top2_candidates.append((peak_indices[i + 1], False))
+        if top1_idx >= n - 40:
+            top2_candidates.append((n - 1, True))
+        for top2_idx, is_stage_b in top2_candidates:
 
             top1_price = prices[top1_idx]
             top2_price = prices[top2_idx]
 
-        # ── RULE 3: Minimum time between peaks ──
-        separation = top2_idx - top1_idx
-        gap_days = separation / cpd if cpd > 0 else separation
-        if separation < min_gap_candles:
-            if verbose:
-                _emit_dt_rejected(ticker, "Peaks too close together "
-                                  f"({gap_days:.0f} days < {MIN_PEAK_GAP_DAYS} days)")
-            continue
-
-        # ── RULE 3b: Maximum time between peaks ──
-        max_gap_candles = max(2, int(round(MAX_PEAK_GAP_DAYS * cpd)))
-        if separation > max_gap_candles:
-            if verbose:
-                _emit_dt_rejected(ticker, f"Peaks too far apart "
-                                  f"({gap_days:.0f} days > {MAX_PEAK_GAP_DAYS} days)")
-            continue
-
-        # ── RULE 4: Peak similarity ──
-        similarity_pct = abs(top1_price - top2_price) / top1_price * 100
-        if similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
-            if verbose:
-                _emit_dt_rejected(ticker, f"Peaks differ by {similarity_pct:.1f}% "
-                                  f"(> {DOUBLE_TOP_SIMILARITY_PCT}%)")
-            continue
-
-        # ── RULE 5: Neckline = valley low between the two peaks ──
-        valley_prices = prices[top1_idx:top2_idx + 1]
-        valley_rel_idx = int(np.argmin(valley_prices))
-        valley_idx = top1_idx + valley_rel_idx
-        valley_price = prices[valley_idx]  # This IS the neckline
-
-        # Ensure price between peaks does not rise above them (invalidates double top)
-        max_top_price = max(top1_price, top2_price)
-        in_between_prices = prices[top1_idx + 1 : top2_idx]
-        if len(in_between_prices) > 0:
-            highest_between = np.max(in_between_prices)
-            if highest_between > max_top_price:
-                if verbose:
-                    _emit_dt_rejected(ticker, f"Price rose above peaks in between them "
-                                      f"({highest_between:.2f} > {max_top_price:.2f})")
+            separation = top2_idx - top1_idx
+            if separation < MIN_DOUBLE_CANDLES:
                 continue
 
-        # ── RULE 2: Valley drop ≥ 10% below first peak ──
-        valley_drop_pct = (top1_price - valley_price) / top1_price
-        if valley_drop_pct < MIN_VALLEY_DROP_PCT:
-            if verbose:
-                _emit_dt_rejected(ticker, f"Valley drop {valley_drop_pct*100:.1f}% "
-                                  f"< {MIN_VALLEY_DROP_PCT*100:.0f}% required")
-            continue
+            similarity_pct = abs(top1_price - top2_price) / top1_price * 100
+            if similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
+                if is_stage_b and top2_price < top1_price and similarity_pct <= DOUBLE_TOP_SIMILARITY_PCT + 3:
+                    pass 
+                else:
+                    continue
 
-        # ── RULE 1: Prior uptrend check ──
-        trend_start = max(0, top1_idx - PRIOR_TREND_LOOKBACK_CANDLES)
-        trend_segment = trend_prices[trend_start:top1_idx]
-        prior_slope = 0.0
-        prior_r2 = 0.0
-        prior_trend_pass = False
+            valley_prices = prices[top1_idx:top2_idx + 1]
+            valley_rel_idx = int(np.argmin(valley_prices))
+            valley_idx = top1_idx + valley_rel_idx
+            valley_price = prices[valley_idx]
 
-        if len(trend_segment) >= 5:
-            x = np.arange(len(trend_segment))
-            res = linregress(x, trend_segment)
-            prior_slope = res.slope
-            prior_r2 = res.rvalue ** 2
-            prior_trend_pass = (prior_slope > 0 and prior_r2 > 0.5)
+            avg_top = (top1_price + top2_price) / 2
+            valley_drop_pct = (avg_top - valley_price) / avg_top * 100
+            if valley_drop_pct < MIN_VALLEY_DROP_PCT:
+                continue
 
-        if not prior_trend_pass:
-            if verbose:
-                _emit_dt_rejected(ticker, f"No prior uptrend (slope={prior_slope:.4f}, "
-                                  f"R²={prior_r2:.3f})")
-            continue
-
-        # ── RULE 6 + 7: Breakdown confirmation with time-decay ──
-        neckline_threshold = valley_price * (1 - BREAKDOWN_CONFIRM_PCT)
-        breakdown_idx = None
-        consecutive_below = 0
-        breakdown_confirmed = False
-        candles_waited = 0
-        verdict = "FORMING"
-        reject_reason = ""
-
-        search_end = min(n, top2_idx + 1 + MAX_BREAKOUT_WAIT_CANDLES)
-        for k in range(top2_idx + 1, search_end):
-            candles_waited = k - top2_idx
-            if prices[k] < neckline_threshold:
-                consecutive_below += 1
-                if consecutive_below >= BREAKDOWN_CONFIRM_CANDLES_DT:
-                    breakdown_idx = k - BREAKDOWN_CONFIRM_CANDLES_DT + 1
-                    breakdown_confirmed = True
+            breakdown_idx = None
+            for k in range(top2_idx + 1, min(n, top2_idx + 30)):
+                if prices[k] < valley_price:
+                    breakdown_idx = k
                     break
-            else:
-                consecutive_below = 0
 
-        if not breakdown_confirmed:
-            # Check if we ran out of data vs ran out of patience
-            if top2_idx + 1 + MAX_BREAKOUT_WAIT_CANDLES <= n:
-                verdict = "REJECTED"
-                reject_reason = "Breakout window expired (no breakdown within " \
-                                f"{MAX_BREAKOUT_WAIT_CANDLES} candles)"
-            else:
-                verdict = "FORMING"
-                reject_reason = "Breakdown not yet confirmed"
+            status = "confirmed"
+            stage = ""
+            if breakdown_idx is None:
+                if is_stage_b and similarity_pct > DOUBLE_TOP_SIMILARITY_PCT:
+                    status = "forming"
+                    stage = "Stage B - Approaching second peak: Price rallying back up toward first peak"
+                    breakdown_idx = n - 1
+                elif not is_stage_b or (is_stage_b and similarity_pct <= DOUBLE_TOP_SIMILARITY_PCT):
+                    status = "forming"
+                    stage = "Stage C - Second peak formed, awaiting confirmation: Price touched first peak, hasn't broken neckline"
+                    breakdown_idx = n - 1
+                else:
+                    continue
 
-            if not verbose:
-                continue
+            vol_sma50 = 0
+            vol_top1_avg = 0
+            vol_top2_avg = 0
+            vol_pattern_pass = None
+            vol_breakdown_pass = None
 
-        # ── RULE 9: Volume checks ──
-        vol_sma50 = 0
-        vol_top1_avg = 0
-        vol_top2_avg = 0
-        vol_pattern_pass = None  # informational: T1 > T2
-        vol_breakdown_pass = None  # hard gate: breakdown spike
-        vol_breakdown_ratio = 0.0
+            if volumes is not None and len(volumes) == n:
+                vol_series = pd.Series(volumes)
+                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                sma_idx = min(top2_idx, len(vol_sma) - 1)
+                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-        if volumes is not None and len(volumes) == n:
-            vol_series = pd.Series(volumes)
-            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-            sma_idx = min(top2_idx, len(vol_sma) - 1)
-            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+                def avg_vol(idx, radius=3):
+                    s = max(0, idx - radius)
+                    e = min(n, idx + radius + 1)
+                    return float(np.mean(volumes[s:e]))
 
-            # Volume around each top (±3 candles)
-            def avg_vol(idx, radius=3):
-                s = max(0, idx - radius)
-                e = min(n, idx + radius + 1)
-                return float(np.mean(volumes[s:e]))
+                vol_top1_avg = avg_vol(top1_idx)
+                vol_top2_avg = avg_vol(top2_idx)
 
-            vol_top1_avg = avg_vol(top1_idx)
-            vol_top2_avg = avg_vol(top2_idx)
+                vol_pattern_pass = vol_top1_avg > vol_top2_avg
 
-            # RULE 9a: Informational — declining volume T1→T2
-            vol_pattern_pass = vol_top1_avg > vol_top2_avg
+                if vol_sma50 > 0 and status == "confirmed":
+                    bd_vol = float(volumes[breakdown_idx])
+                    vol_breakdown_pass = bd_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-            # RULE 9b: Hard reject — breakdown volume spike
-            if breakdown_confirmed and breakdown_idx is not None and vol_sma50 > 0:
-                bd_end = min(breakdown_idx + BREAKDOWN_CONFIRM_CANDLES_DT, len(volumes))
-                bd_vols = volumes[breakdown_idx:bd_end]
-                if len(bd_vols) > 0:
-                    vol_breakdown_avg = float(np.mean(bd_vols))
-                    vol_breakdown_ratio = vol_breakdown_avg / vol_sma50 if vol_sma50 > 0 else 0
-                    vol_breakdown_pass = vol_breakdown_avg > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+            quality = compute_quality_score("double_top", {
+                "similarity_pct": similarity_pct,
+                "depth_pct": valley_drop_pct,
+                "vol_pattern_pass": vol_pattern_pass,
+                "vol_breakout_pass": vol_breakdown_pass,
+            })
 
-        # Volume is INFORMATIONAL ONLY — feeds quality score, does not reject.
-        # (Bulkowski/Investopedia/StockCharts: volume is descriptive for
-        #  pattern identification, not a hard filter.)
+            pattern = {
+                "pattern_type": "double_top",
+                "ticker": ticker,
+                "verdict": "VALID",
+                "reject_reason": "",
+                "status": status,
+                "stage": stage,
+                "first_top_price": round(float(top1_price), 2),
+                "valley_price": round(float(valley_price), 2),
+                "second_top_price": round(float(top2_price), 2),
+                "breakdown_price": round(float(prices[breakdown_idx]), 2) if status == "confirmed" else None,
+                "similarity_pct": round(float(similarity_pct), 2),
+                "valley_drop_pct": round(float(valley_drop_pct), 2),
+                "separation": int(separation),
+                "vol_top1_avg": round(float(vol_top1_avg), 0),
+                "vol_top2_avg": round(float(vol_top2_avg), 0),
+                "vol_pattern_pass": vol_pattern_pass,
+                "vol_breakdown_pass": vol_breakdown_pass,
+                "vol_sma50": vol_sma50,
+                "quality_score": quality,
+                "first_top_idx": int(top1_idx),
+                "valley_idx": int(valley_idx),
+                "second_top_idx": int(top2_idx),
+                "breakdown_idx": int(breakdown_idx),
+            }
 
-        # Set final verdict
-        if breakdown_confirmed and verdict != "REJECTED":
-            verdict = "CONFIRMED"
+            if dates is not None:
+                pattern["first_top_date"] = str(dates[top1_idx])
+                pattern["valley_date"] = str(dates[valley_idx])
+                pattern["second_top_date"] = str(dates[top2_idx])
+                if status == "confirmed":
+                    pattern["breakdown_date"] = str(dates[breakdown_idx])
+                    pattern["signal_date"] = str(dates[breakdown_idx])
 
-        # ── RULE 8: Profit target and ATR-based stop-loss ──
-        higher_peak = max(top1_price, top2_price)
-        pattern_height = higher_peak - valley_price
-        profit_target = valley_price - pattern_height
-        atr_value = compute_atr(highs, lows, prices, period=ATR_PERIOD)
-        suggested_stop = higher_peak + (ATR_STOP_MULTIPLIER * atr_value)
+            candidates.append(pattern)
+            
+            # Cache completed, non-forming structures
+            if not is_stage_b:
+                valid_structures.append(pattern)
 
-        # ── Quality score ──
-        quality = compute_quality_score("double_top", {
-            "similarity_pct": similarity_pct,
-            "depth_pct": valley_drop_pct * 100,
-            "vol_pattern_pass": vol_pattern_pass,
-            "vol_breakout_pass": vol_breakdown_pass,
-        })
+    if structural_cache is not None and isinstance(structural_cache, dict):
+        structural_cache["double_top_structures"] = valid_structures
 
-        # ── Build pattern dict ──
-        pattern = {
-            "pattern_type":       "double_top",
-            "ticker":             ticker,
-            "verdict":            verdict,
-            "reject_reason":      reject_reason,
-            # Prices
-            "first_top_price":    round(float(top1_price), 2),
-            "valley_price":       round(float(valley_price), 2),
-            "second_top_price":   round(float(top2_price), 2),
-            "breakdown_price":    round(float(prices[breakdown_idx]), 2) if breakdown_idx else None,
-            # Metrics
-            "similarity_pct":     round(float(similarity_pct), 2),
-            "valley_drop_pct":    round(float(valley_drop_pct * 100), 2),
-            "gap_days":           round(float(gap_days), 1),
-            "separation":         int(separation),
-            "candles_waited":     int(candles_waited),
-            # Prior trend
-            "prior_slope":        round(float(prior_slope), 6),
-            "prior_r2":           round(float(prior_r2), 3),
-            "prior_trend_pass":   prior_trend_pass,
-            # Volume
-            "vol_top1_avg":       round(float(vol_top1_avg), 0),
-            "vol_top2_avg":       round(float(vol_top2_avg), 0),
-            "vol_pattern_pass":   vol_pattern_pass,
-            "vol_breakdown_pass": vol_breakdown_pass,
-            "vol_breakdown_ratio": round(float(vol_breakdown_ratio), 2),
-            "vol_sma50":          round(float(vol_sma50), 0),
-            # Breakdown confirmation
-            "breakdown_confirmed": breakdown_confirmed,
-            "breakdown_confirm_pct": round(float(BREAKDOWN_CONFIRM_PCT * 100), 1),
-            "breakdown_confirm_candles": BREAKDOWN_CONFIRM_CANDLES_DT,
-            # Trade reference (educational only)
-            "pattern_height":     round(float(pattern_height), 2),
-            "atr_14":             round(float(atr_value), 2),
-            "profit_target":      round(float(profit_target), 2),
-            "suggested_stop":     round(float(suggested_stop), 2),
-            # Indices (internal)
-            "first_top_idx":      int(top1_idx),
-            "valley_idx":         int(valley_idx),
-            "second_top_idx":     int(top2_idx),
-            "breakdown_idx":      int(breakdown_idx) if breakdown_idx else None,
-            "quality_score":      quality if verdict == "CONFIRMED" else 0,
-        }
-
-        if dates is not None:
-            pattern["first_top_date"]  = str(dates[top1_idx])
-            pattern["valley_date"]     = str(dates[valley_idx])
-            pattern["second_top_date"] = str(dates[top2_idx])
-            if breakdown_idx is not None:
-                pattern["breakdown_date"]  = str(dates[breakdown_idx])
-                pattern["signal_date"]     = str(dates[breakdown_idx])
-
-        candidates.append(pattern)
-
-    # Deduplication
-    candidates.sort(key=lambda p: (p['first_top_price'] + p['second_top_price'], p.get("quality_score", 0)), reverse=True)
+    # Deduplication for slow path output
+    candidates.sort(key=lambda p: p["quality_score"], reverse=True)
     patterns_found = []
     claimed = []
 
@@ -2266,7 +2495,6 @@ def detect_double_top(prices, volumes=None, ticker="UNKNOWN", dates=None,
 
     return patterns_found
 
-
 def _emit_dt_rejected(ticker, reason):
     """Helper to print a quick Double Top rejection in verbose mode."""
     print(f"  [DT] {ticker}: REJECTED — {reason}")
@@ -2276,70 +2504,99 @@ def _emit_dt_rejected(ticker, reason):
 #  11. DETECT DOUBLE BOTTOM
 # =============================================================================
 
-def detect_double_bottom(prices, volumes=None, ticker="UNKNOWN", dates=None,
-                         interval="1d", verbose=False,
-                         adj_close=None, highs=None, lows=None):
+def detect_double_bottom(prices, volumes=None, ticker="UNKNOWN", dates=None, interval="1d", verbose=False, structural_cache=None):
     """
-    Detects Double Bottom reversal patterns with all 9 required rules:
-
-    1. Prior downtrend (linreg on Adj Close, slope < 0, R² > 0.5)
-    2. Neckline rise ≥ 10% above first bottom
-    3. Min 14 calendar days between bottoms
-    4. Bottom similarity ≤ 4%
-    5. Neckline = recovery peak between the two bottoms
-    6. Decisive close above neckline (0.5% margin, 2 sustained candles)
-    7. Time-decay: max 10 candles after second bottom for breakout
-    8. ATR-based profit target and stop-loss
-    9. Volume: declining B1→B2 (informational), breakout spike (hard reject)
-
-    Smoothing: YES — uses smooth_prices() + find_peaks(-x) for trough detection.
-    All reported prices are RAW.
-
-    Parameters
-    ----------
-    prices : array-like
-        Close prices.
-    volumes : array-like, optional
-        Volume data.
-    ticker : str
-        Ticker symbol.
-    dates : array-like, optional
-        Date index.
-    interval : str
-        Candle interval (e.g., "1d", "15m").
-    verbose : bool
-        If True, also prints REJECTED and FORMING patterns.
-    adj_close : array-like, optional
-        Adjusted Close prices for prior-trend check.
-    highs : array-like, optional
-        High prices for ATR calculation.
-    lows : array-like, optional
-        Low prices for ATR calculation.
-
-    Returns
-    -------
-    list[dict]
-        Detected Double Bottom patterns with verdict, metrics, and trade levels.
+    Detects Double Bottom reversal patterns.
     """
+    import numpy as np
+    import pandas as pd
+    from scipy.signal import find_peaks
+
     prices = np.array(prices, dtype=float)
     if volumes is not None:
         volumes = np.array(volumes, dtype=float)
-    # Adjusted Close: use if provided, else fall back to raw Close
-    trend_prices = np.array(adj_close, dtype=float) if adj_close is not None else prices.copy()
-    if highs is not None:
-        highs = np.array(highs, dtype=float)
-    else:
-        highs = prices.copy()
-    if lows is not None:
-        lows = np.array(lows, dtype=float)
-    else:
-        lows = prices.copy()
 
     n = len(prices)
     if n < 30:
         return []
 
-    # ── Smooth and find troughs ──
+    # Fast Path: Cache Hit
+    patterns_found = []
+    cache_hit = False
+
+    if structural_cache is not None and "double_bottom_structures" in structural_cache and dates is not None:
+        try:
+            for cached_pat in structural_cache["double_bottom_structures"]:
+                bot1_idx = dates.get_loc(pd.Timestamp(cached_pat["first_bottom_date"]))
+                peak_idx = dates.get_loc(pd.Timestamp(cached_pat["peak_date"]))
+                bot2_idx = dates.get_loc(pd.Timestamp(cached_pat["second_bottom_date"]))
+                
+                peak_price = cached_pat["peak_price"]
+                
+                breakout_idx = None
+                for k in range(bot2_idx + 1, min(n, bot2_idx + 30)):
+                    if prices[k] > peak_price:
+                        breakout_idx = k
+                        break
+
+                status = "confirmed"
+                stage = ""
+                if breakout_idx is None:
+                    status = "forming"
+                    stage = "Stage C - Second bottom formed, awaiting confirmation: Price touched first bottom, hasn't broken neckline"
+                    breakout_idx = n - 1
+
+                vol_breakout_pass = None
+                if volumes is not None:
+                    vol_sma50 = cached_pat.get("vol_sma50", 0)
+                    if vol_sma50 > 0:
+                        bo_vol = float(volumes[breakout_idx])
+                        vol_breakout_pass = bo_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+
+                quality = compute_quality_score("double_bottom", {
+                    "similarity_pct": cached_pat["similarity_pct"],
+                    "depth_pct": cached_pat["peak_rise_pct"],
+                    "vol_pattern_pass": cached_pat["vol_pattern_pass"],
+                    "vol_breakout_pass": vol_breakout_pass,
+                })
+
+                pat = cached_pat.copy()
+                pat["breakout_idx"] = breakout_idx
+                pat["breakout_price"] = round(float(prices[breakout_idx]), 2) if status == "confirmed" else None
+                pat["vol_breakout_pass"] = vol_breakout_pass
+                pat["quality_score"] = quality
+                pat["status"] = status
+                pat["stage"] = stage
+                
+                if status == "confirmed":
+                    pat["signal_date"] = str(dates[breakout_idx])
+                    pat["breakout_date"] = str(dates[breakout_idx])
+                
+                patterns_found.append(pat)
+
+            cache_hit = True
+
+        except KeyError:
+            patterns_found = []
+            cache_hit = False
+
+    if cache_hit:
+        patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
+        final_patterns = []
+        claimed = []
+        for c in patterns_found:
+            is_dup = False
+            for (c1, c2) in claimed:
+                if abs(c["first_bottom_idx"] - c1) <= 10 and abs(c["second_bottom_idx"] - c2) <= 10:
+                    is_dup = True
+                    break
+            if not is_dup:
+                final_patterns.append(c)
+                claimed.append((c["first_bottom_idx"], c["second_bottom_idx"]))
+        return final_patterns
+
+
+    # Slow Path: Full Detection
     smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
     min_prominence = np.median(smoothed) * 0.01
     trough_indices, _ = find_peaks(-smoothed, distance=8, prominence=min_prominence)
@@ -2347,243 +2604,139 @@ def detect_double_bottom(prices, volumes=None, ticker="UNKNOWN", dates=None,
     if len(trough_indices) < 2:
         return []
 
-    # Convert MIN_PEAK_GAP_DAYS to candle count for this interval
-    cpd = interval_to_candles_per_day(interval)
-    min_gap_candles = max(2, int(round(MIN_PEAK_GAP_DAYS * cpd)))
-
+    valid_structures = []
     candidates = []
 
-    for i in range(len(trough_indices) - 1):
-        for j in range(i + 1, len(trough_indices)):
-            bot1_approx = trough_indices[i]
-            bot2_approx = trough_indices[j]
-            
-            bot1_idx = refine_trough(bot1_approx, prices, window=4)
-            bot2_idx = refine_trough(bot2_approx, prices, window=4)
-            
-            if bot1_idx >= bot2_idx:
-                continue
+    for i in range(len(trough_indices)):
+        bot1_idx = trough_indices[i]
+        bot2_candidates = []
+        if i + 1 < len(trough_indices):
+            bot2_candidates.append((trough_indices[i + 1], False))
+        if bot1_idx >= n - 40:
+            bot2_candidates.append((n - 1, True))
+        for bot2_idx, is_stage_b in bot2_candidates:
 
             bot1_price = prices[bot1_idx]
             bot2_price = prices[bot2_idx]
 
-        # ── RULE 3: Minimum time between bottoms ──
-        separation = bot2_idx - bot1_idx
-        gap_days = separation / cpd if cpd > 0 else separation
-        if separation < min_gap_candles:
-            if verbose:
-                _emit_db_rejected(ticker, "Bottoms too close together "
-                                  f"({gap_days:.0f} days < {MIN_PEAK_GAP_DAYS} days)")
-            continue
-
-        # ── RULE 3b: Maximum time between bottoms ──
-        max_gap_candles = max(2, int(round(MAX_PEAK_GAP_DAYS * cpd)))
-        if separation > max_gap_candles:
-            if verbose:
-                _emit_db_rejected(ticker, f"Bottoms too far apart "
-                                  f"({gap_days:.0f} days > {MAX_PEAK_GAP_DAYS} days)")
-            continue
-
-        # ── RULE 4: Bottom similarity ──
-        similarity_pct = abs(bot1_price - bot2_price) / bot1_price * 100
-        if similarity_pct > DOUBLE_BOTTOM_SIMILARITY_PCT:
-            if verbose:
-                _emit_db_rejected(ticker, f"Bottoms differ by {similarity_pct:.1f}% "
-                                  f"(> {DOUBLE_BOTTOM_SIMILARITY_PCT}%)")
-            continue
-
-        # ── RULE 5: Neckline = recovery peak between the two bottoms ──
-        between_prices = prices[bot1_idx:bot2_idx + 1]
-        peak_rel_idx = int(np.argmax(between_prices))
-        peak_idx = bot1_idx + peak_rel_idx
-        peak_price = prices[peak_idx]  # This IS the neckline (resistance)
-
-        # Ensure price between bottoms does not drop below them (invalidates double bottom)
-        min_bot_price = min(bot1_price, bot2_price)
-        in_between_prices = prices[bot1_idx + 1 : bot2_idx]
-        if len(in_between_prices) > 0:
-            lowest_between = np.min(in_between_prices)
-            if lowest_between < min_bot_price:
-                if verbose:
-                    _emit_db_rejected(ticker, f"Price dropped below bottoms in valley between them "
-                                      f"({lowest_between:.2f} < {min_bot_price:.2f})")
+            separation = bot2_idx - bot1_idx
+            if separation < MIN_DOUBLE_CANDLES:
                 continue
 
-        # ── RULE 2: Neckline rise ≥ 10% above first bottom ──
-        neckline_rise_pct = (peak_price - bot1_price) / bot1_price
-        if neckline_rise_pct < MIN_NECKLINE_RISE_PCT:
-            if verbose:
-                _emit_db_rejected(ticker, f"Neckline rise {neckline_rise_pct*100:.1f}% "
-                                  f"< {MIN_NECKLINE_RISE_PCT*100:.0f}% required")
-            continue
+            similarity_pct = abs(bot1_price - bot2_price) / bot1_price * 100
+            if similarity_pct > DOUBLE_BOTTOM_SIMILARITY_PCT:
+                if is_stage_b and bot2_price > bot1_price and similarity_pct <= DOUBLE_BOTTOM_SIMILARITY_PCT + 3:
+                    pass 
+                else:
+                    continue
 
-        # ── RULE 1: Prior downtrend check ──
-        trend_start = max(0, bot1_idx - PRIOR_TREND_LOOKBACK_CANDLES)
-        trend_segment = trend_prices[trend_start:bot1_idx]
-        prior_slope = 0.0
-        prior_r2 = 0.0
-        prior_trend_pass = False
+            between_prices = prices[bot1_idx:bot2_idx + 1]
+            peak_rel_idx = int(np.argmax(between_prices))
+            peak_idx = bot1_idx + peak_rel_idx
+            peak_price = prices[peak_idx]
 
-        if len(trend_segment) >= 5:
-            x = np.arange(len(trend_segment))
-            res = linregress(x, trend_segment)
-            prior_slope = res.slope
-            prior_r2 = res.rvalue ** 2
-            prior_trend_pass = (prior_slope < 0 and prior_r2 > 0.5)
+            avg_bot = (bot1_price + bot2_price) / 2
+            peak_rise_pct = (peak_price - avg_bot) / avg_bot * 100
+            if peak_rise_pct < MIN_PEAK_RISE_PCT:
+                continue
 
-        if not prior_trend_pass:
-            if verbose:
-                _emit_db_rejected(ticker, f"No prior downtrend (slope={prior_slope:.4f}, "
-                                  f"R²={prior_r2:.3f})")
-            continue
-
-        # ── RULE 6 + 7: Breakout confirmation with time-decay ──
-        neckline_threshold = peak_price * (1 + BREAKOUT_CONFIRM_PCT_DB)
-        breakout_idx = None
-        consecutive_above = 0
-        breakout_confirmed = False
-        candles_waited = 0
-        verdict = "FORMING"
-        reject_reason = ""
-
-        search_end = min(n, bot2_idx + 1 + MAX_BREAKOUT_WAIT_CANDLES)
-        for k in range(bot2_idx + 1, search_end):
-            candles_waited = k - bot2_idx
-            if prices[k] > neckline_threshold:
-                consecutive_above += 1
-                if consecutive_above >= BREAKOUT_CONFIRM_CANDLES_DB:
-                    breakout_idx = k - BREAKOUT_CONFIRM_CANDLES_DB + 1
-                    breakout_confirmed = True
+            breakout_idx = None
+            for k in range(bot2_idx + 1, min(n, bot2_idx + 30)):
+                if prices[k] > peak_price:
+                    breakout_idx = k
                     break
-            else:
-                consecutive_above = 0
 
-        if not breakout_confirmed:
-            if bot2_idx + 1 + MAX_BREAKOUT_WAIT_CANDLES <= n:
-                verdict = "REJECTED"
-                reject_reason = "Breakout window expired (no breakout within " \
-                                f"{MAX_BREAKOUT_WAIT_CANDLES} candles)"
-            else:
-                verdict = "FORMING"
-                reject_reason = "Breakout not yet confirmed"
+            status = "confirmed"
+            stage = ""
+            if breakout_idx is None:
+                if is_stage_b and similarity_pct > DOUBLE_BOTTOM_SIMILARITY_PCT:
+                    status = "forming"
+                    stage = "Stage B - Approaching second bottom: Price dropping back down toward first bottom"
+                    breakout_idx = n - 1
+                elif not is_stage_b or (is_stage_b and similarity_pct <= DOUBLE_BOTTOM_SIMILARITY_PCT):
+                    status = "forming"
+                    stage = "Stage C - Second bottom formed, awaiting confirmation: Price touched first bottom, hasn't broken neckline"
+                    breakout_idx = n - 1
+                else:
+                    continue
 
-            if not verbose:
-                continue
+            vol_sma50 = 0
+            vol_bot1_avg = 0
+            vol_bot2_avg = 0
+            vol_pattern_pass = None
+            vol_breakout_pass = None
 
-        # ── RULE 9: Volume checks ──
-        vol_sma50 = 0
-        vol_bot1_avg = 0
-        vol_bot2_avg = 0
-        vol_pattern_pass = None  # informational: B2 < B1
-        vol_breakout_pass = None  # hard gate: breakout spike
-        vol_breakout_ratio = 0.0
+            if volumes is not None and len(volumes) == n:
+                vol_series = pd.Series(volumes)
+                vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
+                sma_idx = min(bot2_idx, len(vol_sma) - 1)
+                vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
 
-        if volumes is not None and len(volumes) == n:
-            vol_series = pd.Series(volumes)
-            vol_sma = vol_series.rolling(window=VOLUME_SMA_PERIOD, min_periods=10).mean()
-            sma_idx = min(bot2_idx, len(vol_sma) - 1)
-            vol_sma50 = float(vol_sma.iloc[sma_idx]) if not pd.isna(vol_sma.iloc[sma_idx]) else 0
+                def avg_vol(idx, radius=3):
+                    s = max(0, idx - radius)
+                    e = min(n, idx + radius + 1)
+                    return float(np.mean(volumes[s:e]))
 
-            def avg_vol(idx, radius=3):
-                s = max(0, idx - radius)
-                e = min(n, idx + radius + 1)
-                return float(np.mean(volumes[s:e]))
+                vol_bot1_avg = avg_vol(bot1_idx)
+                vol_bot2_avg = avg_vol(bot2_idx)
 
-            vol_bot1_avg = avg_vol(bot1_idx)
-            vol_bot2_avg = avg_vol(bot2_idx)
+                vol_pattern_pass = vol_bot1_avg > vol_bot2_avg
 
-            # RULE 9a: Informational — declining volume B1→B2
-            vol_pattern_pass = vol_bot2_avg < vol_bot1_avg
+                if vol_sma50 > 0 and status == "confirmed":
+                    bo_vol = float(volumes[breakout_idx])
+                    vol_breakout_pass = bo_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-            # RULE 9b: Hard reject — breakout volume spike
-            if breakout_confirmed and breakout_idx is not None and vol_sma50 > 0:
-                bo_end = min(breakout_idx + BREAKOUT_CONFIRM_CANDLES_DB, len(volumes))
-                bo_vols = volumes[breakout_idx:bo_end]
-                if len(bo_vols) > 0:
-                    vol_breakout_avg = float(np.mean(bo_vols))
-                    vol_breakout_ratio = vol_breakout_avg / vol_sma50 if vol_sma50 > 0 else 0
-                    vol_breakout_pass = vol_breakout_avg > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+            quality = compute_quality_score("double_bottom", {
+                "similarity_pct": similarity_pct,
+                "depth_pct": peak_rise_pct,
+                "vol_pattern_pass": vol_pattern_pass,
+                "vol_breakout_pass": vol_breakout_pass,
+            })
 
-        # Volume is INFORMATIONAL ONLY — feeds quality score, does not reject.
-        # (Bulkowski/Investopedia/StockCharts: volume is descriptive for
-        #  pattern identification, not a hard filter.)
+            pattern = {
+                "pattern_type": "double_bottom",
+                "ticker": ticker,
+                "verdict": "VALID",
+                "reject_reason": "",
+                "status": status,
+                "stage": stage,
+                "first_bottom_price": round(float(bot1_price), 2),
+                "peak_price": round(float(peak_price), 2),
+                "second_bottom_price": round(float(bot2_price), 2),
+                "breakout_price": round(float(prices[breakout_idx]), 2) if status == "confirmed" else None,
+                "similarity_pct": round(float(similarity_pct), 2),
+                "peak_rise_pct": round(float(peak_rise_pct), 2),
+                "separation": int(separation),
+                "vol_bot1_avg": round(float(vol_bot1_avg), 0),
+                "vol_bot2_avg": round(float(vol_bot2_avg), 0),
+                "vol_pattern_pass": vol_pattern_pass,
+                "vol_breakout_pass": vol_breakout_pass,
+                "vol_sma50": vol_sma50,
+                "quality_score": quality,
+                "first_bottom_idx": int(bot1_idx),
+                "peak_idx": int(peak_idx),
+                "second_bottom_idx": int(bot2_idx),
+                "breakout_idx": int(breakout_idx),
+            }
 
-        # Set final verdict
-        if breakout_confirmed and verdict != "REJECTED":
-            verdict = "CONFIRMED"
+            if dates is not None:
+                pattern["first_bottom_date"] = str(dates[bot1_idx])
+                pattern["peak_date"] = str(dates[peak_idx])
+                pattern["second_bottom_date"] = str(dates[bot2_idx])
+                if status == "confirmed":
+                    pattern["breakout_date"] = str(dates[breakout_idx])
+                    pattern["signal_date"] = str(dates[breakout_idx])
 
-        # ── RULE 8: Profit target and ATR-based stop-loss ──
-        lower_bottom = min(bot1_price, bot2_price)
-        pattern_height = peak_price - lower_bottom
-        profit_target = peak_price + pattern_height
-        atr_value = compute_atr(highs, lows, prices, period=ATR_PERIOD)
-        suggested_stop = lower_bottom - (ATR_STOP_MULTIPLIER * atr_value)
+            candidates.append(pattern)
+            
+            if not is_stage_b:
+                valid_structures.append(pattern)
 
-        # ── Quality score ──
-        quality = compute_quality_score("double_bottom", {
-            "similarity_pct": similarity_pct,
-            "depth_pct": neckline_rise_pct * 100,
-            "vol_pattern_pass": vol_pattern_pass,
-            "vol_breakout_pass": vol_breakout_pass,
-        })
+    if structural_cache is not None and isinstance(structural_cache, dict):
+        structural_cache["double_bottom_structures"] = valid_structures
 
-        # ── Build pattern dict ──
-        pattern = {
-            "pattern_type":        "double_bottom",
-            "ticker":              ticker,
-            "verdict":             verdict,
-            "reject_reason":       reject_reason,
-            # Prices
-            "first_bottom_price":  round(float(bot1_price), 2),
-            "peak_price":          round(float(peak_price), 2),
-            "second_bottom_price": round(float(bot2_price), 2),
-            "breakout_price":      round(float(prices[breakout_idx]), 2) if breakout_idx else None,
-            # Metrics
-            "similarity_pct":      round(float(similarity_pct), 2),
-            "neckline_rise_pct":   round(float(neckline_rise_pct * 100), 2),
-            "gap_days":            round(float(gap_days), 1),
-            "separation":          int(separation),
-            "candles_waited":      int(candles_waited),
-            # Prior trend
-            "prior_slope":         round(float(prior_slope), 6),
-            "prior_r2":            round(float(prior_r2), 3),
-            "prior_trend_pass":    prior_trend_pass,
-            # Volume
-            "vol_bot1_avg":        round(float(vol_bot1_avg), 0),
-            "vol_bot2_avg":        round(float(vol_bot2_avg), 0),
-            "vol_pattern_pass":    vol_pattern_pass,
-            "vol_breakout_pass":   vol_breakout_pass,
-            "vol_breakout_ratio":  round(float(vol_breakout_ratio), 2),
-            "vol_sma50":           round(float(vol_sma50), 0),
-            # Breakout confirmation
-            "breakout_confirmed":  breakout_confirmed,
-            "breakout_confirm_pct": round(float(BREAKOUT_CONFIRM_PCT_DB * 100), 1),
-            "breakout_confirm_candles": BREAKOUT_CONFIRM_CANDLES_DB,
-            # Trade reference (educational only)
-            "pattern_height":      round(float(pattern_height), 2),
-            "atr_14":              round(float(atr_value), 2),
-            "profit_target":       round(float(profit_target), 2),
-            "suggested_stop":      round(float(suggested_stop), 2),
-            # Indices (internal)
-            "first_bottom_idx":    int(bot1_idx),
-            "peak_idx":            int(peak_idx),
-            "second_bottom_idx":   int(bot2_idx),
-            "breakout_idx":        int(breakout_idx) if breakout_idx else None,
-            "quality_score":       quality if verdict == "CONFIRMED" else 0,
-        }
-
-        if dates is not None:
-            pattern["first_bottom_date"]  = str(dates[bot1_idx])
-            pattern["peak_date"]          = str(dates[peak_idx])
-            pattern["second_bottom_date"] = str(dates[bot2_idx])
-            if breakout_idx is not None:
-                pattern["breakout_date"]      = str(dates[breakout_idx])
-                pattern["signal_date"]        = str(dates[breakout_idx])
-
-        candidates.append(pattern)
-
-    # Deduplication
-    candidates.sort(key=lambda p: (-(p['first_bottom_price'] + p['second_bottom_price']), p.get("quality_score", 0)), reverse=True)
+    # Deduplication for slow path output
+    candidates.sort(key=lambda p: p["quality_score"], reverse=True)
     patterns_found = []
     claimed = []
 
@@ -2598,7 +2751,6 @@ def detect_double_bottom(prices, volumes=None, ticker="UNKNOWN", dates=None,
             claimed.append((c["first_bottom_idx"], c["second_bottom_idx"]))
 
     return patterns_found
-
 
 def _emit_db_rejected(ticker, reason):
     """Helper to print a quick Double Bottom rejection in verbose mode."""
@@ -2903,7 +3055,7 @@ def print_double_top(p, index=1):
 
 
 def print_double_bottom(p, index=1):
-    """Prints Double Bottom debug output in the updated format."""
+    """Prints Double Bottom debug output with Nifty 200 format."""
     score = p.get('quality_score', 0)
     verdict = p.get('verdict', 'UNKNOWN')
     score_str = f"   Quality Score: {score}" if verdict == "CONFIRMED" else ""
@@ -2912,56 +3064,45 @@ def print_double_bottom(p, index=1):
     print("=" * 60)
     # Prior trend
     trend_pass = "PASS" if p.get('prior_trend_pass') else "FAIL"
-    print(f"Prior Trend: slope={p.get('prior_slope', 0)}, "
-          f"R\u00b2={p.get('prior_r2', 0)} (on Adj Close) -- {trend_pass}")
+    print(f"Prior Trend: slope < 0 OR below 50-EMA -- {trend_pass}")
     # Key prices
     print(f"First Bottom: \u20b9{p['first_bottom_price']}"
           + (f"  ({p.get('first_bottom_date', '')})" if 'first_bottom_date' in p else ""))
-    print(f"Neckline (Peak): \u20b9{p['peak_price']}"
-          + (f"  ({p.get('peak_date', '')})" if 'peak_date' in p else ""))
+    print(f"Neckline (Peak): \u20b9{p['neckline_price']}"
+          + (f"  ({p.get('neckline_date', '')})" if 'neckline_date' in p else ""))
     print(f"Second Bottom: \u20b9{p['second_bottom_price']}"
           + (f"  ({p.get('second_bottom_date', '')})" if 'second_bottom_date' in p else ""))
     # Metrics
-    print(f"Neckline Rise: {p.get('neckline_rise_pct', 0)}%")
-    gap_pass = "PASS" if p.get('gap_days', 0) >= MIN_PEAK_GAP_DAYS else "FAIL"
-    print(f"Gap between bottoms: {p.get('gap_days', 0)} days -- {gap_pass} "
-          f"(min {MIN_PEAK_GAP_DAYS} days)")
+    print(f"Pattern Depth: {p.get('depth_pct', 0)}% (Limits: 5% - 25%)")
+    gap_pass = "PASS" if MIN_DOUBLE_CANDLES <= p.get('separation', 0) <= MAX_DOUBLE_CANDLES else "FAIL"
+    print(f"Time Width: {p.get('separation', 0)} bars -- {gap_pass} "
+          f"([ {MIN_DOUBLE_CANDLES}, {MAX_DOUBLE_CANDLES} ])")
     sim_pass = "PASS" if p.get('similarity_pct', 99) <= DOUBLE_BOTTOM_SIMILARITY_PCT else "FAIL"
-    print(f"Similarity between bottoms: {p.get('similarity_pct', 0)}% -- {sim_pass}")
+    print(f"Bottom Symmetry: {p.get('similarity_pct', 0)}% -- {sim_pass} (Max {DOUBLE_BOTTOM_SIMILARITY_PCT}%)")
+    
+    rsi1 = p.get('rsi_1')
+    rsi2 = p.get('rsi_2')
+    if rsi1 is not None and rsi2 is not None:
+        print(f"RSI Divergence: RSI1={rsi1}, RSI2={rsi2}")
+
     print("-" * 60)
     # Breakout confirmation
     if p.get('breakout_confirmed'):
-        bo_pct = ((p.get('breakout_price', p['peak_price']) - p['peak_price'])
-                  / p['peak_price'] * 100) if p.get('breakout_price') else 0
-        print(f"* BREAKOUT CONFIRMATION: decisive close = {bo_pct:.2f}%, "
-              f"sustained {p.get('breakout_confirm_candles', 2)} candles -- PASS")
+        bo_pct = ((p.get('breakout_price', p['neckline_price']) - p['neckline_price'])
+                  / p['neckline_price'] * 100) if p.get('breakout_price') else 0
+        print(f"* BREAKOUT CONFIRMATION: Close > Neckline (+{bo_pct:.2f}%) -- PASS")
     else:
         print(f"* BREAKOUT CONFIRMATION: -- FAIL ({p.get('reject_reason', 'N/A')})")
-    # Time decay
-    waited = p.get('candles_waited', 0)
-    max_wait = MAX_BREAKOUT_WAIT_CANDLES
-    if verdict == "REJECTED" and "window expired" in p.get('reject_reason', ''):
-        decay_str = f"{waited}/{max_wait} candles used -- EXPIRED"
-    elif verdict == "CONFIRMED":
-        decay_str = f"{waited}/{max_wait} candles used -- PASS"
-    else:
-        decay_str = f"{waited}/{max_wait} candles used -- FORMING"
-    print(f"* BREAKOUT TIME-DECAY: {decay_str}")
+
     # Volume
-    vol_b1 = p.get('vol_bot1_avg', 0)
-    vol_b2 = p.get('vol_bot2_avg', 0)
-    vol_trend = "declining (ideal)" if vol_b2 < vol_b1 else "increasing"
-    print(f"* VOLUME -- First vs Second bottom: {vol_trend} (informational)")
-    bo_ratio = p.get('vol_breakout_ratio', 0)
-    bo_pass = _vol_str(p.get('vol_breakout_pass'))
-    print(f"* VOLUME -- Breakout spike: {bo_ratio:.2f}x avg SMA -- {bo_pass}")
+    bo_pass = "PASS" if p.get('vol_breakout_pass') else "FAIL"
+    print(f"* VOLUME -- Breakout spike >= 1.5x 20-SMA -- {bo_pass}")
     print("-" * 60)
     # Trade reference
     print("* TRADE REFERENCE (educational only, not financial advice):")
-    print(f"  Pattern Height: \u20b9{p.get('pattern_height', 0)}")
-    print(f"  ATR (14-period): \u20b9{p.get('atr_14', 0)}")
     print(f"  Profit Target: \u20b9{p.get('profit_target', 0)}")
-    print(f"  Suggested Stop-Loss: \u20b9{p.get('suggested_stop', 0)} (ATR-based)")
+    print(f"  Conservative Stop-Loss: \u20b9{p.get('conservative_stop', 0)} (ATR-based)")
+    print(f"  Aggressive Stop-Loss: \u20b9{p.get('aggressive_stop', 0)} (Midpoint-based)")
     print("-" * 60)
     # Final verdict
     if verdict == "CONFIRMED":
@@ -3605,7 +3746,34 @@ def run_self_tests(pattern_type="all"):
 #  14. SCANNING INFRASTRUCTURE — Multi-pattern scanning
 # =============================================================================
 
-def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False):
+ALGO_VERSION = 1
+
+def get_param_hash():
+    """
+    Computes a hash of all threshold constants in the current module.
+    Automatically invalidates cache when parameters are tuned.
+    """
+    import json
+    import hashlib
+    ignore_keys = {"BATCH_SIZE", "BATCH_SLEEP", "SCAN_INTERVAL_MINUTES", 
+                   "IST_OFFSET", "PATTERN_NAMES", "ALL_PATTERNS"}
+    params = {}
+    for k, v in globals().items():
+        if k.isupper() and isinstance(v, (int, float, bool)) and k not in ignore_keys:
+            params[k] = v
+            
+    param_str = json.dumps(params, sort_keys=True)
+    return hashlib.sha256(param_str.encode()).hexdigest()
+
+def _restore_dates(pattern_list):
+    """Restores _date fields in a pattern dict from string back to pd.Timestamp."""
+    for p in pattern_list:
+        for k, v in list(p.items()):
+            if k.endswith("_date") and v is not None:
+                p[k] = pd.to_datetime(v)
+    return pattern_list
+
+def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False, is_live=False):
     """
     Runs selected pattern detections on a single ticker's DataFrame.
 
@@ -3655,43 +3823,111 @@ def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False):
     results = {}
 
     DETECT_MAP = {
-        "cup_and_handle": lambda: detect_cup_and_handle(
+        "cup_and_handle": lambda sc=None: detect_cup_and_handle(
             close, highs=highs, volumes=vol,
-            ticker=ticker, dates=dates, interval=interval, verbose=verbose
+            ticker=ticker, dates=dates, interval=interval, verbose=verbose,
+            structural_cache=sc
         ),
-        "bull_flag": lambda: detect_bull_flag(
+        "bull_flag": lambda sc=None: detect_bull_flag(
             close, volumes=vol, ticker=ticker, dates=dates,
             interval=interval, verbose=verbose
         ),
-        "bear_flag": lambda: detect_bear_flag(
+        "bear_flag": lambda sc=None: detect_bear_flag(
             close, volumes=vol, ticker=ticker, dates=dates,
             interval=interval, verbose=verbose
         ),
-        "pennant": lambda: detect_pennant(
+        "pennant": lambda sc=None: detect_pennant(
             close, highs=highs, lows=lows, volumes=vol, ticker=ticker, dates=dates,
             interval=interval, verbose=verbose
         ),
-        "head_and_shoulders": lambda: detect_head_and_shoulders(
+        "head_and_shoulders": lambda sc=None: detect_head_and_shoulders(
             close, highs=highs, lows=lows, volumes=vol, ticker=ticker, dates=dates,
             interval=interval, verbose=verbose
         ),
-        "double_top": lambda: detect_double_top(
+        "double_top": lambda sc=None: detect_double_top(
             close, volumes=vol, ticker=ticker, dates=dates,
-            interval=interval, verbose=verbose,
-            adj_close=adj_close, highs=highs, lows=lows
+            interval=interval, verbose=verbose
         ),
-        "double_bottom": lambda: detect_double_bottom(
+        "double_bottom": lambda sc=None: detect_double_bottom(
             close, volumes=vol, ticker=ticker, dates=dates,
-            interval=interval, verbose=verbose,
-            adj_close=adj_close, highs=highs, lows=lows
+            interval=interval, verbose=verbose
         ),
     }
 
+    import json
+    import time
+    import sqlite3
+    from backend.main import _make_serializable
+    from db_cache import CACHE_DB_PATH
+    
+    start_date_str = df.index.min().strftime('%Y-%m-%d')
+    end_date_str = df.index.max().strftime('%Y-%m-%d')
+    param_hash = get_param_hash()
+    
+    conn = sqlite3.connect(CACHE_DB_PATH)
+    cursor = conn.cursor()
+
     for ptype, detect_fn in DETECT_MAP.items():
         if scan_all or ptype in patterns_to_scan:
+            if is_live:
+                structural_cache = {}
+                try:
+                    cursor.execute("SELECT structural_data FROM layer4_structural WHERE ticker = ? AND interval = ? AND pattern_type = ?", (ticker, interval, ptype))
+                    srow = cursor.fetchone()
+                    if srow:
+                        structural_cache = json.loads(srow[0])
+                except Exception:
+                    pass
+
+                found = detect_fn(sc=structural_cache)
+                
+                # If it's a refactored pattern (like cup_and_handle), it will populate structural_cache
+                if structural_cache and isinstance(structural_cache, dict):
+                    try:
+                        cursor.execute('''
+                            INSERT OR REPLACE INTO layer4_structural (ticker, interval, pattern_type, structural_data)
+                            VALUES (?, ?, ?, ?)
+                        ''', (ticker, interval, ptype, json.dumps(structural_cache)))
+                        conn.commit()
+                    except Exception:
+                        pass
+
+                if found:
+                    results[ptype] = found
+                continue
+
+            # Check Layer 3 Cache
+            cursor.execute('''
+                SELECT results FROM layer3_backtest
+                WHERE ticker = ? AND interval = ? AND pattern_type = ?
+                AND start_date = ? AND end_date = ? AND param_hash = ? AND algo_version = ?
+            ''', (ticker, interval, ptype, start_date_str, end_date_str, param_hash, ALGO_VERSION))
+            
+            row = cursor.fetchone()
+            if row is not None:
+                # Cache hit
+                cached_res = json.loads(row[0])
+                if cached_res:
+                    results[ptype] = _restore_dates(cached_res)
+                continue
+            
+            # Cache miss
             found = detect_fn()
+            
+            # Save to cache
+            serializable_found = _make_serializable(found) if found else []
+            cursor.execute('''
+                INSERT OR REPLACE INTO layer3_backtest 
+                (ticker, interval, pattern_type, start_date, end_date, param_hash, algo_version, results, computed_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (ticker, interval, ptype, start_date_str, end_date_str, param_hash, ALGO_VERSION, 
+                  json.dumps(serializable_found), time.time()))
+            conn.commit()
+            
             if found:
                 results[ptype] = found
+                
+    conn.close()
 
     return results
 
@@ -3910,6 +4146,123 @@ def _is_pattern_from_today(pattern):
         return parsed.date() == today_ist
     except Exception:
         return False
+def _process_alert_history(ticker, df, ptype, patterns):
+    import sqlite3
+    import json
+    from backend.main import _make_serializable
+    from db_cache import CACHE_DB_PATH
+    
+    conn = sqlite3.connect(CACHE_DB_PATH)
+    cursor = conn.cursor()
+    
+    # 1. Invalidate superseded patterns
+    cursor.execute('''
+        SELECT signal_date, pattern_data FROM layer4_alert_history
+        WHERE ticker = ? AND pattern_type = ? AND status = 'active'
+    ''', (ticker, ptype))
+    active_rows = cursor.fetchall()
+    
+    if len(df) > 0 and len(active_rows) > 0:
+        today_ist = _get_ist_now().date()
+        
+        # Find the latest CLOSED candle (i.e. strictly before today)
+        latest_closed = None
+        for i in range(1, min(4, len(df) + 1)):
+            if df.index[-i].date() < today_ist:
+                latest_closed = float(df['Close'].iloc[-i])
+                break
+                
+        if latest_closed is not None:
+            for row in active_rows:
+                signal_date, pdata_str = row
+                pdata = json.loads(pdata_str)
+                superseded = False
+                
+                if ptype == 'cup_and_handle':
+                    # Invalidation logic: Price falls below the handle's low support
+                    handle_low = pdata.get('handle_low_price')
+                    if handle_low is not None and latest_closed < handle_low:
+                        superseded = True
+                elif ptype == 'bull_flag':
+                    # Invalidation logic: Price falls below the flag's low support
+                    flag_low = pdata.get('flag_low_price')
+                    if flag_low is not None and latest_closed < flag_low:
+                        superseded = True
+                elif ptype == 'bear_flag':
+                    # Invalidation logic: Price rallies above the flag's upper resistance
+                    flag_high = pdata.get('flag_high_price')
+                    if flag_high is not None and latest_closed > flag_high:
+                        superseded = True
+                        
+                elif ptype == 'pennant':
+                    direction = pdata.get('direction', 'bullish')
+                    if direction == 'bullish':
+                        pennant_low = pdata.get('pennant_low')
+                        if pennant_low is not None and latest_closed < pennant_low:
+                            superseded = True
+                    else:
+                        pennant_high = pdata.get('pennant_high')
+                        if pennant_high is not None and latest_closed > pennant_high:
+                            superseded = True
+                elif ptype == 'head_and_shoulders':
+                    # Invalidation logic: Price rallies above the right shoulder
+                    right_shoulder_price = pdata.get('right_shoulder_price')
+                    if right_shoulder_price is not None and latest_closed > right_shoulder_price:
+                        superseded = True
+                elif ptype == 'double_top':
+                    # Invalidation logic: Price rallies above the highest top
+                    first_top_price = pdata.get('first_top_price', 0)
+                    second_top_price = pdata.get('second_top_price', 0)
+                    highest_top = max(first_top_price, second_top_price)
+                    if highest_top > 0 and latest_closed > highest_top:
+                        superseded = True
+                elif ptype == 'double_bottom':
+                    # Invalidation logic: Price falls below the lowest bottom
+                    first_bottom_price = pdata.get('first_bottom_price', float('inf'))
+                    second_bottom_price = pdata.get('second_bottom_price', float('inf'))
+                    lowest_bottom = min(first_bottom_price, second_bottom_price)
+                    if lowest_bottom != float('inf') and latest_closed < lowest_bottom:
+                        superseded = True
+                            
+                if superseded:
+                    cursor.execute('''
+                        UPDATE layer4_alert_history 
+                        SET status = 'superseded' 
+                        WHERE ticker = ? AND pattern_type = ? AND signal_date = ?
+                    ''', (ticker, ptype, signal_date))
+                    conn.commit()
+
+    # 2. Check if there is still an active alert
+    cursor.execute('''
+        SELECT 1 FROM layer4_alert_history
+        WHERE ticker = ? AND pattern_type = ? AND status = 'active'
+    ''', (ticker, ptype))
+    has_active = cursor.fetchone() is not None
+    
+    new_alert_to_return = None
+    
+    # 3. Process new patterns
+    if not has_active:
+        for pat in patterns:
+            if _is_pattern_from_today(pat):
+                signal_date = pat.get("signal_date",
+                                      pat.get("handle_low_date",
+                                              pat.get("breakout_date",
+                                                      pat.get("breakdown_date"))))
+                if signal_date:
+                    serializable_pat = _make_serializable(pat)
+                    cursor.execute('''
+                        INSERT OR IGNORE INTO layer4_alert_history
+                        (ticker, pattern_type, signal_date, pattern_data, status)
+                        VALUES (?, ?, ?, ?, 'active')
+                    ''', (ticker, ptype, str(signal_date), json.dumps(serializable_pat)))
+                    conn.commit()
+                    new_alert_to_return = pat
+                    break
+                    
+    conn.close()
+    return new_alert_to_return
+
 
 
 def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
@@ -3929,18 +4282,12 @@ def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
     new_alerts = []
 
     for ticker, df in all_data.items():
-        ticker_results = scan_ticker(df, ticker, patterns_to_scan, interval=interval)
+        ticker_results = scan_ticker(df, ticker, patterns_to_scan, interval=interval, is_live=True)
 
         for ptype, patterns in ticker_results.items():
-            dedup_key = (ticker, ptype)
-            if dedup_key in _live_alerted_today:
-                continue
-
-            for pat in patterns:
-                if _is_pattern_from_today(pat):
-                    _live_alerted_today.add(dedup_key)
-                    new_alerts.append(pat)
-                    break
+            new_alert = _process_alert_history(ticker, df, ptype, patterns)
+            if new_alert:
+                new_alerts.append(new_alert)
 
     return new_alerts
 

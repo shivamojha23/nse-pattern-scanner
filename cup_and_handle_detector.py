@@ -154,56 +154,10 @@ _live_alert_date = None
 
 def get_nifty_list():
     """
-    Downloads the Nifty 200 stock list from a public CSV hosted by NSE India.
-
-    Returns
-    -------
-    list[str]
-        Ticker symbols with ".NS" suffix (e.g., ["RELIANCE.NS", "TCS.NS"]).
-        Falls back to a curated Nifty 50 list if the download fails.
-
-    How it works
-    ------------
-    1. Tries multiple public CSV URLs containing Nifty index constituents.
-    2. Reads them with pandas, looks for a "Symbol" column.
-    3. Appends ".NS" so Yahoo Finance knows it's an NSE stock.
-    4. Falls back to hardcoded Nifty 50 if all URLs fail.
+    Fetches the Nifty 200 stock list via the Layer 2 cache.
     """
-    
-    csv_urls = [
-        "https://archives.nseindia.com/content/indices/ind_nifty200list.csv",
-        "https://archives.nseindia.com/content/indices/ind_nifty100list.csv",
-        "https://archives.nseindia.com/content/indices/ind_nifty50list.csv",
-    ]
-
-    for url in csv_urls:
-        try:
-            print(f"  ↳ Trying to fetch watchlist from:\n    {url}")
-            df = pd.read_csv(url)
-            if "Symbol" in df.columns:
-                symbols = [f"{sym.strip()}.NS" for sym in df["Symbol"].tolist()]
-                print(f"  ✓ Loaded {len(symbols)} tickers from NSE index CSV.\n")
-                return symbols
-            else:
-                print(f"  ✗ CSV downloaded but 'Symbol' column not found.")
-        except Exception as e:
-            print(f"  ✗ Failed: {e}")
-
-    # Fallback — hardcoded Nifty 50
-    print("  ⚠ All CSV sources failed. Using hardcoded Nifty 50 fallback.\n")
-    fallback = [
-        "RELIANCE", "TCS", "HDFCBANK", "INFY", "ICICIBANK",
-        "HINDUNILVR", "ITC", "SBIN", "BHARTIARTL", "KOTAKBANK",
-        "LT", "AXISBANK", "ASIANPAINT", "HCLTECH", "MARUTI",
-        "SUNPHARMA", "TITAN", "BAJFINANCE", "WIPRO", "ULTRACEMCO",
-        "NESTLEIND", "ONGC", "NTPC", "POWERGRID", "M&M",
-        "TATAMOTORS", "TATASTEEL", "JSWSTEEL", "ADANIENT", "ADANIPORTS",
-        "BAJAJFINSV", "TECHM", "HDFCLIFE", "SBILIFE", "DIVISLAB",
-        "DRREDDY", "CIPLA", "APOLLOHOSP", "EICHERMOT", "HEROMOTOCO",
-        "COALINDIA", "BPCL", "GRASIM", "INDUSINDBK", "BRITANNIA",
-        "TATACONSUM", "HINDALCO", "UPL", "BAJAJ-AUTO", "LTIM",
-    ]
-    return [f"{s}.NS" for s in fallback]
+    from db_cache import get_cached_watchlist
+    return get_cached_watchlist("nifty200")
 
 
 # =============================================================================
