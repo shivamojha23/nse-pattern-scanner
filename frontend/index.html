@@ -423,12 +423,116 @@
             flex-shrink: 0;
         }
 
-        /* ── Right Area ── */
-        .right-area {
+        /* ── Center Area ── */
+        .center-area {
             flex: 1;
             display: flex;
             flex-direction: column;
             overflow: hidden;
+            border-right: 1px solid var(--border-color);
+        }
+
+        /* ── Right Panel (Live Alerts) ── */
+        .right-panel {
+            width: 320px;
+            min-width: 320px;
+            background: var(--bg-secondary);
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .alerts-header {
+            padding: 14px;
+            border-bottom: 1px solid var(--border-color);
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .alerts-header h3 {
+            font-size: 13px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .alerts-list {
+            flex: 1;
+            overflow-y: auto;
+            padding: 10px;
+            background: var(--bg-primary);
+        }
+        
+        .alert-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 12px;
+            margin-bottom: 10px;
+            position: relative;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        .alert-card.new-alert {
+            animation: pulse-border 2s;
+        }
+        
+        @keyframes pulse-border {
+            0% { border-color: var(--accent-primary); box-shadow: 0 0 10px rgba(99,102,241,0.5); }
+            100% { border-color: var(--border-color); box-shadow: 0 2px 8px rgba(0,0,0,0.1); }
+        }
+
+        .alert-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .alert-ticker {
+            font-weight: 700;
+            font-size: 14px;
+            color: var(--text-primary);
+        }
+        
+        .alert-badge {
+            font-size: 9px;
+            background: var(--accent-gradient);
+            color: white;
+            padding: 2px 6px;
+            border-radius: 10px;
+            font-weight: 700;
+            margin-left: 6px;
+            opacity: 1;
+            transition: opacity 1s;
+        }
+
+        .alert-dismiss {
+            cursor: pointer;
+            color: var(--text-muted);
+            font-size: 14px;
+        }
+
+        .alert-dismiss:hover {
+            color: var(--red);
+        }
+
+        .alert-body {
+            font-size: 12px;
+            color: var(--text-secondary);
+        }
+        
+        .alert-detail {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 4px;
+        }
+        
+        .alert-time {
+            font-size: 10px;
+            color: var(--text-muted);
+            margin-top: 8px;
+            text-align: right;
         }
 
         .chart-container {
@@ -974,8 +1078,8 @@
                 </div>
             </aside>
 
-            <!-- Right Area -->
-            <div class="right-area">
+            <!-- Center Area -->
+            <div class="center-area">
                 <div class="chart-container">
                     <div id="chart"></div>
                     <div class="chart-overlay-msg" id="chartOverlay">
@@ -989,6 +1093,20 @@
                     <!-- Filled dynamically by JavaScript -->
                 </div>
             </div>
+
+            <!-- Right Panel: Live Alerts -->
+            <aside class="right-panel" id="liveAlertsPanel">
+                <div class="alerts-header">
+                    <h3>Live Alerts History</h3>
+                    <span class="results-count" id="alertsCount">0</span>
+                </div>
+                <div class="alerts-list" id="alertsList">
+                    <div class="empty-state" id="alertsEmptyState">
+                        <div class="icon">🔔</div>
+                        <div class="text">No live alerts yet. Start Live Scan to monitor.</div>
+                    </div>
+                </div>
+            </aside>
         </div>
     </div>
 
@@ -1569,6 +1687,130 @@
                 }
             }, 6000);
         }
+        
+        async function loadLiveAlerts() {
+            try {
+                const response = await fetch(`${API_BASE}/api/live_alerts`);
+                if (!response.ok) return;
+                const data = await response.json();
+                
+                const alertsList = document.getElementById('alertsList');
+                if (!data.alerts || data.alerts.length === 0) {
+                    document.getElementById('alertsCount').textContent = '0';
+                    alertsList.innerHTML = `
+                        <div class="empty-state" id="alertsEmptyState">
+                            <div class="icon">🔔</div>
+                            <div class="text">No live alerts yet. Start Live Scan to monitor.</div>
+                        </div>`;
+                    return;
+                }
+                
+                document.getElementById('alertsCount').textContent = data.alerts.length;
+                alertsList.innerHTML = '';
+                
+                data.alerts.forEach(alert => {
+                    renderAlertCard(alert, false);
+                });
+            } catch(e) {
+                console.error("Failed to load live alerts", e);
+            }
+        }
+        
+        async function dismissAlert(alertId, btnEl) {
+            // Remove from UI immediately
+            const card = btnEl.closest('.alert-card');
+            if (card) card.remove();
+            
+            // Update count
+            const countEl = document.getElementById('alertsCount');
+            let count = parseInt(countEl.textContent) - 1;
+            countEl.textContent = count > 0 ? count : 0;
+            
+            if (count <= 0) {
+                document.getElementById('alertsList').innerHTML = `
+                        <div class="empty-state" id="alertsEmptyState">
+                            <div class="icon">🔔</div>
+                            <div class="text">No live alerts yet. Start Live Scan to monitor.</div>
+                        </div>`;
+            }
+            
+            // Call API
+            try {
+                await fetch(`${API_BASE}/api/live_alerts/dismiss`, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({ alert_id: alertId })
+                });
+            } catch(e) {
+                console.error("Failed to dismiss alert", e);
+            }
+        }
+        
+        function renderAlertCard(alert, isNew = false) {
+            const alertsList = document.getElementById('alertsList');
+            const emptyState = document.getElementById('alertsEmptyState');
+            if (emptyState) emptyState.remove();
+            
+            // Check if already exists in UI
+            if (document.getElementById(`alert-${alert.alert_id}`)) {
+                return false; // Did not render duplicate
+            }
+            
+            const card = document.createElement('div');
+            card.className = 'alert-card' + (isNew ? ' new-alert' : '');
+            card.id = `alert-${alert.alert_id}`;
+            
+            const signalHtml = alert.signal === 'BULLISH' ? '🟢 Bullish' : (alert.signal === 'BEARISH' ? '🔴 Bearish' : '⚪ Neutral');
+            
+            // Calc time ago roughly
+            let timeAgo = '';
+            if (alert.detected_at) {
+                const ms = Date.now() - new Date(alert.detected_at).getTime();
+                const mins = Math.floor(ms / 60000);
+                if (mins < 1) timeAgo = 'Just now';
+                else if (mins < 60) timeAgo = `${mins} min ago`;
+                else timeAgo = `${Math.floor(mins/60)} hr ago`;
+            }
+            
+            card.innerHTML = `
+                <div class="alert-card-header">
+                    <div class="alert-ticker">${alert.ticker.replace('.NS', '')} ${isNew ? '<span class="alert-badge" id="badge-'+alert.alert_id+'">NEW</span>' : ''}</div>
+                    <div class="alert-dismiss" onclick="dismissAlert('${alert.alert_id}', this)" title="Dismiss forever">&times;</div>
+                </div>
+                <div class="alert-body">
+                    <div class="alert-detail">
+                        <span>Pattern:</span>
+                        <strong>${alert.pattern}</strong>
+                    </div>
+                    <div class="alert-detail">
+                        <span>Signal:</span>
+                        <span>${signalHtml}</span>
+                    </div>
+                    <div class="alert-detail">
+                        <span>Quality:</span>
+                        <strong>${alert.quality_score}</strong>
+                    </div>
+                    <div class="alert-time">${timeAgo}</div>
+                </div>
+            `;
+            
+            // Prepend so newest is at the top
+            alertsList.insertBefore(card, alertsList.firstChild);
+            
+            if (isNew) {
+                setTimeout(() => {
+                    const badge = document.getElementById(`badge-${alert.alert_id}`);
+                    if (badge) {
+                        badge.style.opacity = '0';
+                        setTimeout(() => badge.remove(), 1000);
+                    }
+                }, 10000);
+            }
+            
+            return true; // Rendered successfully
+        }
 
         async function runLiveScan() {
             if (!els.liveAlertsToggle.checked) return;
@@ -1583,20 +1825,24 @@
 
                 const data = await response.json();
                 if (data.alerts && data.alerts.length > 0) {
+                    let addedCount = 0;
                     data.alerts.forEach(alert => {
-                        const signalHtml = alert.signal_type === 'BULLISH' ? '🟢 Bullish' : (alert.signal_type === 'BEARISH' ? '🔴 Bearish' : '⚪ Neutral');
-                        showToast(
-                            `🔔 New Pattern: ${alert.ticker}`,
-                            `${alert.pattern} completed today!<br>Verdict: <b>${alert.verdict}</b> | ${signalHtml}`
-                        );
-
-                        // Push into current results if not already there to update UI
-                        const exists = scanResults.find(r => r.ticker === alert.ticker && r.pattern_type === alert.pattern_type);
-                        if (!exists) {
-                            scanResults.unshift(alert);
-                            renderResults();
+                        const rendered = renderAlertCard(alert, true);
+                        if (rendered) {
+                            addedCount++;
+                            // Push into current results if not already there to update main view
+                            const exists = scanResults.find(r => r.ticker === alert.ticker && r.pattern_type === alert.pattern_type);
+                            if (!exists) {
+                                scanResults.unshift(alert);
+                            }
                         }
                     });
+                    
+                    if (addedCount > 0) {
+                        const countEl = document.getElementById('alertsCount');
+                        countEl.textContent = parseInt(countEl.textContent) + addedCount;
+                        renderResults();
+                    }
                 }
             } catch (err) {
                 console.error("Live scan polling error:", err);
@@ -1639,6 +1885,9 @@
 
             // Fetch market status
             await fetchMarketStatus();
+            
+            // Load live alerts history
+            await loadLiveAlerts();
 
             // Auto-refresh market status every 60 seconds
             setInterval(fetchMarketStatus, 60000);

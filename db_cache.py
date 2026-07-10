@@ -100,6 +100,21 @@ def init_db():
         PRIMARY KEY (ticker, pattern_type, signal_date)
     )
     ''')
+    
+    # Layer 5: Persistent Live Alerts (Frontend UI state)
+    cursor.execute('''
+    CREATE TABLE IF NOT EXISTS live_alerts (
+        alert_id TEXT PRIMARY KEY,
+        ticker TEXT,
+        pattern_type TEXT,
+        timeframe TEXT,
+        breakout_timestamp TEXT,
+        detected_at TEXT,
+        pattern_data TEXT,
+        dismissed INTEGER DEFAULT 0,
+        dismissed_at TEXT
+    )
+    ''')
 
     conn.commit()
     

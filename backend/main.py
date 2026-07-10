@@ -29,9 +29,12 @@ import traceback
 import numpy as np
 import pandas as pd
 import yfinance as yf
-from fastapi import FastAPI, Query, HTTPException
+from fastapi import FastAPI, Query, HTTPException, Body
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from pydantic import BaseModel
+import sqlite3
+import json
 from fastapi.staticfiles import StaticFiles
 
 # Import our scanner adapter and cache
@@ -815,13 +818,33 @@ async def api_live_scan(
         interval=interval
     )
     
-    # Format results
-    results = []
+    # Connect to DB to deduplicate and persist
+    from db_cache import CACHE_DB_PATH
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+    cursor = conn.cursor()
+    
+    now_str = datetime.datetime.now().isoformat()
+    valid_new_results = []
+    
     for pat in new_alerts:
         ptype = pat.get("pattern_type", "")
+        ticker = pat.get("ticker", "UNKNOWN")
+        # Identity logic
+        sig_date = pat.get("signal_date", "")
+        if not sig_date:
+            sig_date = pat.get("breakout_date", pat.get("breakdown_date", ""))
+            
+        alert_id = f"{ticker}_{ptype}_{interval}_{sig_date}"
+        
+        # Check if exists
+        cursor.execute("SELECT 1 FROM live_alerts WHERE alert_id = ?", (alert_id,))
+        if cursor.fetchone():
+            continue  # Skip, already exists (whether dismissed or active)
+            
         serializable_pat = _make_serializable(pat)
-        results.append({
-            "ticker": pat.get("ticker", "UNKNOWN"),
+        result_obj = {
+            "alert_id": alert_id,
+            "ticker": ticker,
             "pattern": PATTERN_NAMES.get(ptype, ptype.upper()),
             "pattern_type": ptype,
             "signal": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
@@ -830,19 +853,64 @@ async def api_live_scan(
             "key_levels": _extract_pattern_key_levels(pat),
             "checks": _extract_checks(pat),
             "raw": serializable_pat,
-            
-            # Keep original keys for backward compatibility
-            "pattern_id": ptype,
-            "quality": pat.get("quality_score", 0),
-            "signal_type": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
-            "markers": _extract_pattern_key_levels(pat),
-            "raw_data": serializable_pat
-        })
+            "detected_at": now_str,
+            "breakout_timestamp": sig_date,
+            "timeframe": interval
+        }
         
+        # Insert new alert
+        cursor.execute('''
+            INSERT INTO live_alerts (alert_id, ticker, pattern_type, timeframe, breakout_timestamp, detected_at, pattern_data, dismissed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+        ''', (alert_id, ticker, ptype, interval, sig_date, now_str, json.dumps(result_obj)))
+        
+        valid_new_results.append(result_obj)
+        
+    conn.commit()
+    conn.close()
+
     return {
-        "count": len(results),
-        "alerts": results,
+        "count": len(valid_new_results),
+        "alerts": valid_new_results,
     }
+
+class DismissRequest(BaseModel):
+    alert_id: str
+
+@app.get("/api/live_alerts")
+async def get_live_alerts():
+    from db_cache import CACHE_DB_PATH
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+    cursor = conn.cursor()
+    cursor.execute('''
+        SELECT pattern_data FROM live_alerts
+        WHERE dismissed = 0
+        ORDER BY detected_at DESC
+    ''')
+    rows = cursor.fetchall()
+    conn.close()
+    
+    alerts = []
+    for row in rows:
+        try:
+            alerts.append(json.loads(row[0]))
+        except:
+            pass
+    return {"alerts": alerts}
+
+@app.post("/api/live_alerts/dismiss")
+async def dismiss_live_alert(req: DismissRequest):
+    from db_cache import CACHE_DB_PATH
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+    cursor = conn.cursor()
+    now_str = datetime.datetime.now().isoformat()
+    cursor.execute('''
+        UPDATE live_alerts SET dismissed = 1, dismissed_at = ?
+        WHERE alert_id = ?
+    ''', (now_str, req.alert_id))
+    conn.commit()
+    conn.close()
+    return {"status": "success"}
 
 
 # =============================================================================
