@@ -16,8 +16,9 @@ CACHE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache.
 
 def init_db():
     """Initialize the SQLite database and create tables for Layer 1."""
-    conn = sqlite3.connect(CACHE_DB_PATH)
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
     cursor = conn.cursor()
+    cursor.execute('PRAGMA journal_mode=WAL;')
     
     # Layer 1: Raw Candle Data Cache
     cursor.execute('''
@@ -301,7 +302,7 @@ def get_cached_watchlist(list_name="nifty200") -> list:
     """
     Layer 2 Cache. Fetches Nifty watchlist and caches it.
     """
-    conn = sqlite3.connect(CACHE_DB_PATH)
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
     cursor = conn.cursor()
     
     today_dt = get_ist_today()
