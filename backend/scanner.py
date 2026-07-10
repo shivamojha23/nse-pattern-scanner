@@ -59,6 +59,7 @@ detect_double_bottom = pattern_scanner.detect_double_bottom
 
 # Multi-pattern scanning
 scan_ticker = pattern_scanner.scan_ticker
+scan_watchlist = pattern_scanner.scan_watchlist
 
 # Market status
 is_market_open = pattern_scanner.is_market_open

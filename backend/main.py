@@ -44,6 +44,7 @@ from backend.scanner import (
     ALL_PATTERNS,
     PATTERN_NAMES,
     PATTERN_SIGNALS,
+    scan_watchlist,
 )
 from backend.cache import ScanCache
 
@@ -385,8 +386,8 @@ def _extract_checks(pattern_dict):
     elif ptype in ("double_top", "double_bottom"):
         checks.append({
             "name": "Peak/Bottom Similarity",
-            "status": "PASS" if pattern_dict.get("similarity_pct", 99) <= 3 else "FAIL",
-            "detail": f"{pattern_dict.get('similarity_pct', 0)}% diff"
+            "status": "PASS" if pattern_dict.get("similarity_pct", 99) <= 6 else "FAIL",
+            "detail": f"{pattern_dict.get('similarity_pct', 0)}% diff (≤6% required)"
         })
         depth_key = "valley_drop_pct" if ptype == "double_top" else "peak_rise_pct"
         checks.append({
@@ -545,6 +546,14 @@ async def run_scan(
             detail=f"Unknown pattern '{pattern}'. Valid options: {', '.join(list(pattern_map.keys()))}"
         )
 
+    # ── Validate Interval ──
+    valid_intervals = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
+    if interval not in valid_intervals:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid interval '{interval}'. Must be one of: {', '.join(valid_intervals)}"
+        )
+
     # ── Validate yfinance params ──
     validated_lookback = validate_yfinance_params(interval, lookback)
 
@@ -667,12 +676,12 @@ async def get_candles(
         ticker = ticker + ".NS"
 
     try:
-        # Download data for this single ticker
-        df = yf.download(
-            tickers=ticker,
+        # Fetch data via Layer 1 Cache
+        from db_cache import get_stock_data
+        df = get_stock_data(
+            ticker=ticker,
             period=validated_lookback,
-            interval=interval,
-            progress=False,
+            interval=interval
         )
 
         if df.empty:
@@ -742,6 +751,81 @@ async def get_candles(
             status_code=500,
             detail=f"Failed to fetch candles for {ticker}: {str(e)}"
         )
+
+
+# =============================================================================
+#  LIVE SCAN ENDPOINT
+# =============================================================================
+
+@app.get("/api/live_scan")
+async def api_live_scan(
+    patterns: str = Query("all", description="Comma-separated pattern list"),
+    interval: str = Query("15m", description="Candle interval"),
+    lookback: str = Query("59d", description="Lookback period"),
+):
+    """
+    Runs a live scan across Nifty 200 to find NEW alerts completing TODAY.
+    Uses the stateful deduplication cache in pattern_scanner.py to avoid duplicates.
+    """
+    # Parse patterns
+    pattern_list = [p.strip().lower() for p in patterns.split(",")]
+    if "all" in pattern_list:
+        patterns_to_scan = ["all"]
+    else:
+        patterns_to_scan = [p for p in pattern_list if p in ALL_PATTERNS]
+        if not patterns_to_scan:
+            patterns_to_scan = ["all"]
+
+    # Get tickers
+    tickers = get_nifty_list()
+    
+    # Validate Interval
+    valid_intervals = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
+    if interval not in valid_intervals:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid interval '{interval}'. Must be one of: {', '.join(valid_intervals)}"
+        )
+
+    # Validate yfinance lookback
+    validated_lookback = validate_yfinance_params(interval, lookback)
+
+    # Run scan_watchlist
+    new_alerts = scan_watchlist(
+        tickers=tickers,
+        patterns_to_scan=patterns_to_scan,
+        period=validated_lookback,
+        interval=interval
+    )
+    
+    # Format results
+    results = []
+    for pat in new_alerts:
+        ptype = pat.get("pattern_type", "")
+        serializable_pat = _make_serializable(pat)
+        results.append({
+            "ticker": pat.get("ticker", "UNKNOWN"),
+            "pattern": PATTERN_NAMES.get(ptype, ptype.upper()),
+            "pattern_type": ptype,
+            "signal": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
+            "verdict": pat.get("verdict", "UNKNOWN"),
+            "quality_score": pat.get("quality_score", 0),
+            "key_levels": _extract_pattern_key_levels(pat),
+            "checks": _extract_checks(pat),
+            "raw": serializable_pat,
+            
+            # Keep original keys for backward compatibility
+            "pattern_id": ptype,
+            "quality": pat.get("quality_score", 0),
+            "signal_type": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
+            "markers": _extract_pattern_key_levels(pat),
+            "raw_data": serializable_pat
+        })
+        
+    return {
+        "count": len(results),
+        "alerts": results,
+    }
 
 
 # =============================================================================
