@@ -238,69 +238,34 @@ def get_nifty_list():
 def fetch_batch_data(tickers, period=None, start=None, end=None, interval="15m"):
     """
     Downloads OHLCV candle data for many tickers in batches.
-
-    Returns dict[str, pd.DataFrame] — keys are ticker symbols, values are
-    DataFrames with Open, High, Low, Close, Volume columns.
+    Returns dict[str, pd.DataFrame].
     """
+    import db_cache
+    import concurrent.futures
+
     all_data = {}
-    total = len(tickers)
     min_candles = 30 if interval in ("1d", "1wk") else 50
+    
+    print(f"  📦 Fetching data for {len(tickers)} tickers via Layer 1 cache...")
 
-    for i in range(0, total, BATCH_SIZE):
-        batch = tickers[i : i + BATCH_SIZE]
-        batch_str = " ".join(batch)
-        batch_num = (i // BATCH_SIZE) + 1
-        total_batches = (total + BATCH_SIZE - 1) // BATCH_SIZE
-        print(f"  📦 Batch {batch_num}/{total_batches}  "
-              f"({len(batch)} tickers) ... ", end="", flush=True)
-
+    def fetch_single(t):
         try:
-            download_kwargs = {
-                "tickers": batch_str,
-                "interval": interval,
-                "group_by": "ticker",
-                "progress": False,
-                "threads": True,
-                "auto_adjust": True
-            }
-            if start and end:
-                download_kwargs["start"] = start
-                download_kwargs["end"] = end
-            elif start:
-                download_kwargs["start"] = start
-            elif end:
-                download_kwargs["end"] = end
-            elif period:
-                download_kwargs["period"] = period
-            else:
-                download_kwargs["period"] = "59d"
-
-            data = yf.download(**download_kwargs)
-
-            if data.empty:
-                print("empty result.")
-            else:
-                for ticker in batch:
-                    try:
-                        if isinstance(data.columns, pd.MultiIndex):
-                            ticker_df = data.xs(ticker, level="Ticker", axis=1)
-                        else:
-                            ticker_df = data
-
-                        if not ticker_df.empty and len(ticker_df) > min_candles:
-                            all_data[ticker] = ticker_df.copy()
-                    except (KeyError, TypeError):
-                        pass
-
-                print(f"OK  ({len(all_data)} tickers so far)")
-
+            # get_stock_data implements Layer 1 cache + delta fetching
+            df = db_cache.get_stock_data(t, interval=interval, period=period or "59d")
+            if df is not None and not df.empty and len(df) >= min_candles:
+                return t, df
         except Exception as e:
-            print(f"error: {e}")
+            print(f"Error fetching {t}: {e}")
+        return t, None
 
-        if i + BATCH_SIZE < total:
-            time.sleep(BATCH_SLEEP)
+    with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
+        futures = {executor.submit(fetch_single, t): t for t in tickers}
+        for future in concurrent.futures.as_completed(futures):
+            t, df = future.result()
+            if df is not None:
+                all_data[t] = df
 
-    print(f"\n  ✓ Successfully fetched data for {len(all_data)} tickers.\n")
+    print(f"  ✓ Successfully fetched data for {len(all_data)} tickers.")
     return all_data
 
 

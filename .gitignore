@@ -23,3 +23,15 @@ __pycache__/
 backtest_results.txt
 results_debug.txt
 results.txt
+
+# Caching
+cache.db
+
+# Scratch and test files
+*_temp.py
+refactor_*.py
+test_*.py
+verify_*.py
+fix_*.py
+layer4_*.txt
+verification_report.md

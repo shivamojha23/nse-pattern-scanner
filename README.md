@@ -22,6 +22,7 @@ This project downloads data dynamically from Yahoo Finance, applies price smooth
   * **Self-Test:** Test pattern detection math instantly with mock/synthetic data (no internet required).
   * **Historical Backtest:** Scan the Nifty watchlist over custom time frames (e.g. 2 years) for already completed patterns.
   * **Live Scanner:** Continuously scan during NSE market hours (Mon-Fri, 9:15 AM – 3:30 PM IST) with custom scan intervals (e.g., every 15 minutes).
+* **💾 Local Data Caching:** Uses a local SQLite database to cache historical stock data, significantly speeding up backtests and minimizing Yahoo Finance API rate limits.
 * **🎯 Strict Geometric Validation & Volume Confirmation:** Eliminates spiky false positives using volume analysis and strict price relationships.
 
 ---
