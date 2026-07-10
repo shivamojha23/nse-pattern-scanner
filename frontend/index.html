@@ -1141,12 +1141,13 @@
             const pattern = els.patternSelect.value;
             const interval = els.intervalSelect.value;
             const lookback = els.lookbackSelect.value;
+            const liveMode = els.liveAlertsToggle.checked;
 
             showLoading(`Scanning ${pattern === 'all' ? 'all patterns' : pattern} on Nifty stocks...`);
 
             try {
                 const data = await apiGet(
-                    `/api/scan?pattern=${pattern}&interval=${interval}&lookback=${lookback}`
+                    `/api/scan?pattern=${pattern}&interval=${interval}&lookback=${lookback}&live_mode=${liveMode}`
                 );
 
                 scanResults = data.matches || [];
@@ -1370,8 +1371,15 @@
 
                 // Find the candle time matching this date
                 const matchingCandle = candlesData.find(c => {
-                    const candleDate = typeof c.time === 'string' ? c.time : '';
-                    return candleDate === level.date;
+                    if (typeof c.time === 'string') {
+                        return level.date.startsWith(c.time);
+                    } else {
+                        // c.time is unix timestamp (UTC-aligned naive time). Reconstruct string:
+                        const d = new Date(c.time * 1000);
+                        const iso = d.toISOString(); // e.g. "2024-05-15T10:15:00.000Z"
+                        const str = iso.replace('T', ' ').substring(0, 16); // "2024-05-15 10:15"
+                        return level.date.startsWith(str);
+                    }
                 });
 
                 if (matchingCandle) {

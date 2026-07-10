@@ -115,8 +115,8 @@ def _format_date(ts):
     if ts is None:
         return None
     s = str(ts)
-    # Remove timezone info and time if present (e.g. "2026-01-15 00:00:00+05:30")
-    return s.split(" ")[0].split("T")[0]
+    # Remove timezone info (e.g. "+05:30") but keep the time for intraday
+    return s.split("+")[0].replace("T", " ").strip()
 
 
 def _make_serializable(obj):
@@ -181,10 +181,10 @@ def _extract_pattern_key_levels(pattern_dict):
              "date": _format_date(pattern_dict.get("pole_top_date")),
              "color": "#F44336"},
             {"label": "Flag Low", "price": pattern_dict.get("flag_low_price"),
-             "date": _format_date(pattern_dict.get("flag_low_date")),
+             "date": _format_date(pattern_dict.get("flag_end_date")),
              "color": "#4CAF50"},
             {"label": "Breakout", "price": pattern_dict.get("breakout_price"),
-             "date": _format_date(pattern_dict.get("breakout_date")),
+             "date": _format_date(pattern_dict.get("signal_date")),
              "color": "#FF9800"},
         ]
 
@@ -197,10 +197,10 @@ def _extract_pattern_key_levels(pattern_dict):
              "date": _format_date(pattern_dict.get("pole_bottom_date")),
              "color": "#F44336"},
             {"label": "Flag High", "price": pattern_dict.get("flag_high_price"),
-             "date": _format_date(pattern_dict.get("flag_high_date")),
+             "date": _format_date(pattern_dict.get("flag_end_date")),
              "color": "#4CAF50"},
             {"label": "Breakdown", "price": pattern_dict.get("breakdown_price"),
-             "date": _format_date(pattern_dict.get("breakdown_date")),
+             "date": _format_date(pattern_dict.get("signal_date")),
              "color": "#FF9800"},
         ]
 
@@ -518,6 +518,7 @@ async def run_scan(
     pattern: str = Query("all", description="Pattern to scan: cup_handle, bull_flag, bear_flag, pennant, head_shoulders, double_top, double_bottom, or 'all'"),
     interval: str = Query("1d", description="Candle interval: 15m, 1h, 1d, 1wk"),
     lookback: str = Query("3mo", description="Lookback period: 1mo, 3mo, 6mo, 1y, 2y"),
+    live_mode: bool = Query(False, description="Include forming patterns (Live Mode)"),
 ):
     """
     Runs the pattern scanner across the Nifty watchlist.
@@ -558,7 +559,7 @@ async def run_scan(
     validated_lookback = validate_yfinance_params(interval, lookback)
 
     # ── Check cache ──
-    cache_key = f"{normalized}:{interval}:{validated_lookback}"
+    cache_key = f"{normalized}:{interval}:{validated_lookback}:{live_mode}"
     cached = scan_cache.get(cache_key)
     if cached is not None:
         cached["from_cache"] = True
@@ -604,7 +605,23 @@ async def run_scan(
                 )
 
                 for ptype, patterns in ticker_results.items():
+                    # Deduplicate by signal_date
+                    best_patterns = {}
                     for pat in patterns:
+                        # Filter out forming if not in live_mode
+                        if not live_mode and pat.get("status") == "forming":
+                            continue
+                            
+                        # Deduplicate by timeline (signal_date)
+                        sig_date = pat.get("signal_date")
+                        if not sig_date:
+                            sig_date = pat.get("breakout_date", pat.get("breakdown_date", pat.get("status", "")))
+                            
+                        key = (ptype, sig_date)
+                        if key not in best_patterns or pat.get("quality_score", 0) > best_patterns[key].get("quality_score", 0):
+                            best_patterns[key] = pat
+                            
+                    for pat in best_patterns.values():
                         # Build a clean match object for the API
                         match = {
                             "ticker": pat.get("ticker", ticker),

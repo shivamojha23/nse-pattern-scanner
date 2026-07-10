@@ -995,6 +995,7 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if dates is not None:
                 pattern["pole_start_date"] = str(dates[best_pole["start_idx"]])
                 pattern["pole_top_date"]   = str(dates[pole_end_idx])
+                pattern["flag_start_date"] = str(dates[flag_start])
                 pattern["flag_end_date"]   = str(dates[flag_end])
             
             valid_structures.append(pattern)
@@ -1278,6 +1279,7 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if dates is not None:
                 pattern["pole_start_date"]  = str(dates[best_pole["start_idx"]])
                 pattern["pole_bottom_date"] = str(dates[pole_end_idx])
+                pattern["flag_start_date"]  = str(dates[flag_start])
                 pattern["flag_end_date"]    = str(dates[flag_end])
                 
             valid_structures.append(pattern)
@@ -3829,7 +3831,7 @@ def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False, is_l
     end_date_str = df.index.max().strftime('%Y-%m-%d')
     param_hash = get_param_hash()
     
-    conn = sqlite3.connect(CACHE_DB_PATH)
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
     cursor = conn.cursor()
 
     for ptype, detect_fn in DETECT_MAP.items():
@@ -3969,9 +3971,10 @@ def backtest_historical(patterns_to_scan, tickers=None, period="2y",
                                       interval=interval, verbose=is_verbose)
 
         for ptype, patterns in ticker_results.items():
-            if patterns:
-                print(f"  ✓ {ticker}: {len(patterns)} {PATTERN_NAMES[ptype]} pattern(s)")
-            all_results[ptype].extend(patterns)
+            completed_patterns = [p for p in patterns if p.get("status") != "forming"]
+            if completed_patterns:
+                print(f"  ✓ {ticker}: {len(completed_patterns)} {PATTERN_NAMES[ptype]} pattern(s)")
+            all_results[ptype].extend(completed_patterns)
 
     # Sort each pattern's results by quality score
     for ptype in all_results:
@@ -4117,7 +4120,7 @@ def _process_alert_history(ticker, df, ptype, patterns):
     from backend.main import _make_serializable
     from db_cache import CACHE_DB_PATH
     
-    conn = sqlite3.connect(CACHE_DB_PATH)
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
     cursor = conn.cursor()
     
     # 1. Invalidate superseded patterns

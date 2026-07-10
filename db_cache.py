@@ -194,7 +194,7 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
     Layer 1 Cache Wrapper. Replaces `yf.download`.
     Fetches data from SQLite cache, pulling delta updates or full history from yfinance if necessary.
     """
-    conn = sqlite3.connect(CACHE_DB_PATH)
+    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
     
     today_dt = get_ist_today()
     today_str = today_dt.strftime('%Y-%m-%d')
