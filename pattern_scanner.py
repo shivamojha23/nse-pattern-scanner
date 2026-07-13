@@ -311,14 +311,15 @@ def compute_quality_score(pattern_type, metrics):
         All other patterns use a 0–10 scale.
     """
     if pattern_type == "cup_and_handle":
-        # ── Original v2 formula — UNCHANGED ──
+        # ── Refactored 0-10 Scale ──
         cup_drop_pct = metrics.get("cup_drop_pct", 0)
+        drop_score = min(3.0, max(0, cup_drop_pct / 10.0))
         rv = max(metrics.get("recovery_vol_ratio", 0), 0)
+        rv_score = min(3.0, max(0, rv * 1.5))
         bv = max(metrics.get("breakout_vol_ratio", 0), 0)
-        score = (cup_drop_pct * 0.4
-                 + math.log(rv + 1) * 30
-                 + math.log(bv + 1) * 30)
-        return round(score, 2)
+        bv_score = min(4.0, max(0, bv * 1.33))
+        
+        return round(min(10.0, max(0, drop_score + rv_score + bv_score)), 1)
 
     elif pattern_type in ("bull_flag", "bear_flag"):
         # Pole strength (0–3): 8% rise → 0, 20% → 3
@@ -1663,7 +1664,7 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
 
 # =============================================================================
 def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN",
-                               dates=None, interval="1d", verbose=False, structural_cache=None):
+                               dates=None, interval="1d", verbose=False, structural_cache=None, refine_window=4):
     """
     Detects Head and Shoulders reversal patterns.
     """
@@ -1770,9 +1771,9 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                 head_approx = peak_indices[j]
                 rs_approx = peak_indices[k]
                 
-                ls_idx = refine_peak(ls_approx, prices, window=4)
-                head_idx = refine_peak(head_approx, prices, window=4)
-                rs_idx = refine_peak(rs_approx, prices, window=4)
+                ls_idx = refine_peak(ls_approx, prices, window=refine_window)
+                head_idx = refine_peak(head_approx, prices, window=refine_window)
+                rs_idx = refine_peak(rs_approx, prices, window=refine_window)
                 
                 if not (ls_idx < head_idx < rs_idx):
                     continue
@@ -1816,8 +1817,8 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                 left_trough_approx = min(left_troughs, key=lambda t: prices[t])
                 right_trough_approx = min(right_troughs, key=lambda t: prices[t])
         
-                left_neck_idx = refine_trough(left_trough_approx, prices, window=4)
-                right_neck_idx = refine_trough(right_trough_approx, prices, window=4)
+                left_neck_idx = refine_trough(left_trough_approx, prices, window=refine_window)
+                right_neck_idx = refine_trough(right_trough_approx, prices, window=refine_window)
         
                 left_neck_price = prices[left_neck_idx]
                 right_neck_price = prices[right_neck_idx]
