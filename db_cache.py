@@ -7,18 +7,28 @@ import os
 import time
 import logging
 import re
+import threading
 from zoneinfo import ZoneInfo
-
-def get_ist_today():
-    return datetime.datetime.now(ZoneInfo("Asia/Kolkata")).date()
 
 CACHE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache.db')
 
+_local = threading.local()
+
+def get_db_connection():
+    if not hasattr(_local, 'conn'):
+        # Reused connection per thread
+        conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+        conn.execute('PRAGMA journal_mode=WAL;')
+        _local.conn = conn
+    return _local.conn
+
+def get_utc_now():
+    return datetime.datetime.now(datetime.timezone.utc)
+
 def init_db():
     """Initialize the SQLite database and create tables for Layer 1."""
-    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+    conn = get_db_connection()
     cursor = conn.cursor()
-    cursor.execute('PRAGMA journal_mode=WAL;')
     
     # Layer 1: Raw Candle Data Cache
     cursor.execute('''
@@ -123,7 +133,7 @@ def init_db():
     cursor.execute('DELETE FROM layer3_backtest WHERE computed_at < ?', (current_time - 3600,))
     
     conn.commit()
-    conn.close()
+    # DO NOT CLOSE: conn.close()
 
 init_db()
 
@@ -180,7 +190,7 @@ def _df_to_db(conn, df, ticker, interval):
         ''', records)
         conn.commit()
 
-def _reconcile_corporate_actions(conn, ticker, interval, today_str):
+def _reconcile_corporate_actions(conn, ticker, interval, utc_today_str):
     """
     Weekly reconciliation: Re-fetches the last 30 days of data and overwrites the cache
     to capture retroactive splits, dividends, or corrections from yfinance.
@@ -201,18 +211,31 @@ def _reconcile_corporate_actions(conn, ticker, interval, today_str):
             UPDATE layer1_meta 
             SET last_reconciled_date = ? 
             WHERE ticker = ? AND interval = ?
-        ''', (today_str, ticker, interval))
+        ''', (utc_today_str, ticker, interval))
         conn.commit()
+
+def _parse_meta_date(date_str: str) -> datetime.date:
+    """Helper to safely parse either old YYYY-MM-DD or new ISO 8601 UTC strings to IST dates."""
+    if not date_str:
+        return None
+    try:
+        if 'T' in date_str:
+            return datetime.datetime.fromisoformat(date_str).astimezone(ZoneInfo("Asia/Kolkata")).date()
+        else:
+            return datetime.datetime.strptime(date_str, '%Y-%m-%d').date()
+    except Exception:
+        return None
 
 def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
     """
     Layer 1 Cache Wrapper. Replaces `yf.download`.
     Fetches data from SQLite cache, pulling delta updates or full history from yfinance if necessary.
     """
-    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+    conn = get_db_connection()
     
-    today_dt = get_ist_today()
-    today_str = today_dt.strftime('%Y-%m-%d')
+    utc_now = get_utc_now()
+    utc_now_str = utc_now.isoformat()
+    ist_today_dt = utc_now.astimezone(ZoneInfo("Asia/Kolkata")).date()
     
     # 1. Check cache meta
     cursor = conn.cursor()
@@ -220,7 +243,7 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
     row = cursor.fetchone()
     
     lookback_days = _parse_lookback_to_days(period)
-    requested_start_dt = today_dt - datetime.timedelta(days=lookback_days)
+    requested_start_dt = ist_today_dt - datetime.timedelta(days=lookback_days)
     
     needs_full_fetch = False
     
@@ -228,17 +251,16 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
         needs_full_fetch = True
     else:
         earliest_date_str, last_updated_str, last_reconciled_str = row
-        earliest_date = datetime.datetime.strptime(earliest_date_str, '%Y-%m-%d').date()
+        earliest_date = _parse_meta_date(earliest_date_str)
         
-        if earliest_date > requested_start_dt + datetime.timedelta(days=5):
+        if earliest_date is None or earliest_date > requested_start_dt + datetime.timedelta(days=5):
             # We don't have enough history in cache. (Added 5 days leeway for weekends/holidays)
             needs_full_fetch = True
         else:
             # We have enough history. Do a delta fetch if we haven't updated today.
-            # To handle the provisional window, we fetch from (last_updated_date - 2 days).
-            last_updated_dt = datetime.datetime.strptime(last_updated_str, '%Y-%m-%d').date()
-            if last_updated_dt <= today_dt:
-                delta_start = last_updated_dt - datetime.timedelta(days=2)
+            last_updated_dt = _parse_meta_date(last_updated_str)
+            if last_updated_dt is None or last_updated_dt <= ist_today_dt:
+                delta_start = last_updated_dt - datetime.timedelta(days=2) if last_updated_dt else ist_today_dt - datetime.timedelta(days=2)
                 delta_start_str = delta_start.strftime('%Y-%m-%d')
                 
                 # Fetch delta
@@ -246,13 +268,13 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
                 _df_to_db(conn, df_delta, ticker, interval)
                 
                 # Update last_updated_date (we don't change earliest_date)
-                cursor.execute("UPDATE layer1_meta SET last_updated_date = ? WHERE ticker = ? AND interval = ?", (today_str, ticker, interval))
+                cursor.execute("UPDATE layer1_meta SET last_updated_date = ? WHERE ticker = ? AND interval = ?", (utc_now_str, ticker, interval))
                 conn.commit()
                 
             # Check for corporate action reconciliation (every 7 days)
-            last_recon_dt = datetime.datetime.strptime(last_reconciled_str, '%Y-%m-%d').date() if last_reconciled_str else None
-            if last_recon_dt is None or (today_dt - last_recon_dt).days >= 7:
-                _reconcile_corporate_actions(conn, ticker, interval, today_str)
+            last_recon_dt = _parse_meta_date(last_reconciled_str)
+            if last_recon_dt is None or (ist_today_dt - last_recon_dt).days >= 7:
+                _reconcile_corporate_actions(conn, ticker, interval, utc_now_str)
 
     if needs_full_fetch:
         # Fetch full requested period
@@ -261,14 +283,15 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
         
         # Calculate earliest date actually received
         if not df_full.empty:
-            actual_earliest_dt = df_full.index.min().date()
-            actual_earliest_str = actual_earliest_dt.strftime('%Y-%m-%d')
+            # We store the earliest date as an ISO string based on the UTC timestamp
+            actual_earliest_utc = df_full.index.min().tz_convert('UTC') if df_full.index.tzinfo else df_full.index.min().tz_localize('UTC')
+            actual_earliest_str = actual_earliest_utc.isoformat()
             
             cursor.execute('''
                 INSERT OR REPLACE INTO layer1_meta 
                 (ticker, interval, earliest_date, last_updated_date, last_reconciled_date)
                 VALUES (?, ?, ?, ?, ?)
-            ''', (ticker, interval, actual_earliest_str, today_str, today_str))
+            ''', (ticker, interval, actual_earliest_str, utc_now_str, utc_now_str))
             conn.commit()
             
     # 2. Retrieve data from cache to return as DataFrame
@@ -287,7 +310,7 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
         df_cached.set_index('timestamp', inplace=True)
         df_cached.index.name = 'Date' if interval.endswith('d') or interval.endswith('wk') or interval.endswith('mo') else 'Datetime'
         
-    conn.close()
+    # DO NOT CLOSE: conn.close()
     return df_cached
 
 def validate_watchlist(tickers, list_name):
@@ -317,19 +340,21 @@ def get_cached_watchlist(list_name="nifty200") -> list:
     """
     Layer 2 Cache. Fetches Nifty watchlist and caches it.
     """
-    conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
+    conn = get_db_connection()
     cursor = conn.cursor()
     
-    today_dt = get_ist_today()
-    today_str = today_dt.strftime('%Y-%m-%d')
+    utc_now = get_utc_now()
+    utc_now_str = utc_now.isoformat()
+    ist_today_dt = utc_now.astimezone(ZoneInfo("Asia/Kolkata")).date()
     
     cursor.execute("SELECT tickers, fetched_at FROM layer2_watchlist WHERE list_name = ?", (list_name,))
     row = cursor.fetchone()
     
     if row is not None:
-        cached_tickers, fetched_at = row
-        if fetched_at == today_str:
-            conn.close()
+        cached_tickers, fetched_at_str = row
+        fetched_at_dt = _parse_meta_date(fetched_at_str)
+        if fetched_at_dt == ist_today_dt:
+            # DO NOT CLOSE: conn.close()
             return json.loads(cached_tickers)
             
     # Need to fetch
@@ -360,15 +385,13 @@ def get_cached_watchlist(list_name="nifty200") -> list:
             cursor.execute('''
                 INSERT OR REPLACE INTO layer2_watchlist (list_name, tickers, fetched_at)
                 VALUES (?, ?, ?)
-            ''', (list_name, json.dumps(fetched_list), today_str))
+            ''', (list_name, json.dumps(fetched_list), utc_now_str))
             conn.commit()
-            conn.close()
             return fetched_list
         
     # Fallback if fetch failed
     if row is not None:
         logging.warning("Watchlist fetch failed. Returning stale cached list.")
-        conn.close()
         return json.loads(row[0])
         
     logging.warning("All web fetches failed and no cache exists. Using hardcoded Nifty 50 fallback.")
@@ -384,5 +407,4 @@ def get_cached_watchlist(list_name="nifty200") -> list:
         "DRREDDY", "BAJAJ-AUTO", "EICHERMOT", "TATACONSUM", "COALINDIA",
         "UPL", "INDUSINDBK", "SBILIFE", "LTIM", "BPCL"
     ]
-    conn.close()
     return [f"{sym}.NS" for sym in fallback]
