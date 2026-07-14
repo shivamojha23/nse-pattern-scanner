@@ -643,6 +643,13 @@ def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
 
 def validate_yfinance_params(interval, period):
     """Validates that the interval+lookback combo is supported by yfinance."""
+    import re
+    
+    if period:
+        valid_periods = {"1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "ytd", "max"}
+        if period not in valid_periods and not re.match(r"^\d+d$", period):
+            raise ValueError(f"Invalid lookback period: {period}")
+
     intraday = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h"]
     if interval in intraday:
         if period:

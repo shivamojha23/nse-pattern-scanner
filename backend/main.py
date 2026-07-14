@@ -407,6 +407,7 @@ async def get_candles(
     validated_lookback = validate_yfinance_params(interval, lookback)
 
     # Ensure .NS suffix and format
+    ticker = ticker.upper()
     if not re.match(r'^[A-Z0-9&-]{1,20}(\.NS)?$', ticker):
         raise HTTPException(status_code=400, detail="Invalid ticker format")
     if not ticker.endswith(".NS"):
@@ -540,52 +541,54 @@ async def api_live_scan(
     # Connect to DB to deduplicate and persist
     from db_cache import CACHE_DB_PATH
     conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
-    cursor = conn.cursor()
-    
-    now_str = datetime.datetime.now().isoformat()
-    valid_new_results = []
-    for pat in new_alerts:
-        ptype = pat.get("pattern_type", "")
-        ticker = pat.get("ticker", "UNKNOWN")
-        # Identity logic
-        sig_date = pat.get("signal_date", "")
-        if not sig_date:
-            sig_date = pat.get("breakout_date", pat.get("breakdown_date", ""))
+    try:
+        cursor = conn.cursor()
+        
+        now_str = datetime.datetime.now().isoformat()
+        valid_new_results = []
+        for pat in new_alerts:
+            ptype = pat.get("pattern_type", "")
+            ticker = pat.get("ticker", "UNKNOWN")
+            # Identity logic
+            sig_date = pat.get("signal_date", "")
+            if not sig_date:
+                sig_date = pat.get("breakout_date", pat.get("breakdown_date", ""))
+                
+            alert_id = f"{ticker}_{ptype}_{interval}_{sig_date}"
             
-        alert_id = f"{ticker}_{ptype}_{interval}_{sig_date}"
-        
-        # Check if exists
-        cursor.execute("SELECT 1 FROM live_alerts WHERE alert_id = ?", (alert_id,))
-        if cursor.fetchone():
-            continue  # Skip, already exists (whether dismissed or active)
+            # Check if exists
+            cursor.execute("SELECT 1 FROM live_alerts WHERE alert_id = ?", (alert_id,))
+            if cursor.fetchone():
+                continue  # Skip, already exists (whether dismissed or active)
+                
+            serializable_pat = _make_serializable(pat)
+            result_obj = {
+                "alert_id": alert_id,
+                "ticker": ticker,
+                "pattern": PATTERN_NAMES.get(ptype, ptype.upper()),
+                "pattern_type": ptype,
+                "signal": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
+                "verdict": pat.get("verdict", "UNKNOWN"),
+                "quality_score": pat.get("quality_score", 0),
+                "key_levels": _extract_pattern_key_levels(pat),
+                "checks": _extract_checks(pat),
+                "raw": serializable_pat,
+                "detected_at": now_str,
+                "breakout_timestamp": sig_date,
+                "timeframe": interval
+            }
             
-        serializable_pat = _make_serializable(pat)
-        result_obj = {
-            "alert_id": alert_id,
-            "ticker": ticker,
-            "pattern": PATTERN_NAMES.get(ptype, ptype.upper()),
-            "pattern_type": ptype,
-            "signal": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
-            "verdict": pat.get("verdict", "UNKNOWN"),
-            "quality_score": pat.get("quality_score", 0),
-            "key_levels": _extract_pattern_key_levels(pat),
-            "checks": _extract_checks(pat),
-            "raw": serializable_pat,
-            "detected_at": now_str,
-            "breakout_timestamp": sig_date,
-            "timeframe": interval
-        }
-        
-        # Insert new alert
-        cursor.execute('''
-            INSERT INTO live_alerts (alert_id, ticker, pattern_type, timeframe, breakout_timestamp, detected_at, pattern_data, dismissed)
-            VALUES (?, ?, ?, ?, ?, ?, ?, 0)
-        ''', (alert_id, ticker, ptype, interval, sig_date, now_str, json.dumps(result_obj)))
-        
-        valid_new_results.append(result_obj)
-        
-    conn.commit()
-    conn.close()
+            # Insert new alert
+            cursor.execute('''
+                INSERT INTO live_alerts (alert_id, ticker, pattern_type, timeframe, breakout_timestamp, detected_at, pattern_data, dismissed)
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0)
+            ''', (alert_id, ticker, ptype, interval, sig_date, now_str, json.dumps(result_obj)))
+            
+            valid_new_results.append(result_obj)
+            
+        conn.commit()
+    finally:
+        conn.close()
 
     return {
         "count": len(valid_new_results),
@@ -597,14 +600,16 @@ async def api_live_scan(
 async def get_live_alerts():
     from db_cache import CACHE_DB_PATH
     conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
-    cursor = conn.cursor()
-    cursor.execute('''
-        SELECT pattern_data FROM live_alerts
-        WHERE dismissed = 0
-        ORDER BY detected_at DESC
-    ''')
-    rows = cursor.fetchall()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        cursor.execute('''
+            SELECT pattern_data FROM live_alerts
+            WHERE dismissed = 0
+            ORDER BY detected_at DESC
+        ''')
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
     
     alerts = []
     for row in rows:
@@ -618,14 +623,16 @@ async def get_live_alerts():
 async def dismiss_live_alert(req: DismissRequest):
     from db_cache import CACHE_DB_PATH
     conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
-    cursor = conn.cursor()
-    now_str = datetime.datetime.now().isoformat()
-    cursor.execute('''
-        UPDATE live_alerts SET dismissed = 1, dismissed_at = ?
-        WHERE alert_id = ?
-    ''', (now_str, req.alert_id))
-    conn.commit()
-    conn.close()
+    try:
+        cursor = conn.cursor()
+        now_str = datetime.datetime.now().isoformat()
+        cursor.execute('''
+            UPDATE live_alerts SET dismissed = 1, dismissed_at = ?
+            WHERE alert_id = ?
+        ''', (now_str, req.alert_id))
+        conn.commit()
+    finally:
+        conn.close()
     return {"status": "success"}
 
 
