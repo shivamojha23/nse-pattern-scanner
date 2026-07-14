@@ -29,6 +29,8 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
     n = len(prices)
     if n < 30:
         return []
+
+    patterns_found = []
         
     vol_sma20 = None
     if volumes is not None:

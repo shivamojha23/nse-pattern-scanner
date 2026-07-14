@@ -41,8 +41,7 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
     trough_indices, _ = find_peaks(-smoothed, distance=10, prominence=min_prominence)
 
     if len(peak_indices) < 2 or len(trough_indices) < 1:
-        if isinstance(structural_cache, dict):
-            structural_cache["cup_pairs"] = []
+
         return []
 
     # ── Step 2: Try every combination (Left Rim, Right Rim) ──

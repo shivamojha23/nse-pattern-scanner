@@ -18,6 +18,7 @@ long as the FastAPI server is running.
 """
 
 import time
+from collections import OrderedDict
 
 
 class ScanCache:
@@ -31,16 +32,20 @@ class ScanCache:
     cached = cache.get("cup_handle:1d:3mo")  # returns data or None
     """
 
-    def __init__(self, ttl_seconds=900):
+    def __init__(self, ttl_seconds=900, max_size=100):
         """
         Parameters
         ----------
         ttl_seconds : int
             How many seconds a cached result stays valid.
             Default is 900 (15 minutes).
+        max_size : int
+            Maximum number of entries in the cache.
+            Default is 100.
         """
-        self._store = {}          # {key: {"data": ..., "timestamp": ...}}
-        self._ttl = ttl_seconds   # Time-to-live in seconds
+        self._store = OrderedDict()  # {key: {"data": ..., "timestamp": ...}}
+        self._ttl = ttl_seconds      # Time-to-live in seconds
+        self._max_size = max_size    # Maximum bounded size
 
     def get(self, key):
         """
@@ -66,6 +71,8 @@ class ScanCache:
             del self._store[key]
             return None
 
+        # MRU: Move accessed item to the end
+        self._store.move_to_end(key)
         return entry["data"]
 
     def set(self, key, data):
@@ -83,6 +90,9 @@ class ScanCache:
             "data": data,
             "timestamp": time.time(),
         }
+        # LRU: if size exceeds maximum, remove the first (oldest accessed) item
+        if len(self._store) > self._max_size:
+            self._store.popitem(last=False)
 
     def clear(self):
         """Remove all cached entries."""
@@ -100,4 +110,5 @@ class ScanCache:
         return {
             "entries": len(self._store),
             "ttl_seconds": self._ttl,
+            "max_size": self._max_size,
         }

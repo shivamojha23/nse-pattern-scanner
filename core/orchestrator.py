@@ -47,6 +47,9 @@ import datetime
 import warnings
 import argparse
 import math
+from scipy.signal import find_peaks
+
+ALGO_VERSION = "3.0"
 
 # Fix Windows console encoding so emoji and special characters display correctly.
 if sys.platform == "win32":
@@ -96,10 +99,11 @@ def get_nifty_list():
 #  2. FETCH DATA IN BATCHES — Download candle data from Yahoo Finance
 # =============================================================================
 
-def fetch_batch_data(tickers, period=None, start=None, end=None, interval="15m"):
+def fetch_batch_data(tickers, period=None, start=None, end=None, interval="15m", errors_dict=None):
     """
     Downloads OHLCV candle data for many tickers in batches.
-    Returns dict[str, pd.DataFrame].
+    Returns dict[str, pd.DataFrame]. If errors_dict is provided, it populates
+    it with short reasons for skipped tickers.
     """
     import db_cache
     import concurrent.futures
@@ -113,18 +117,23 @@ def fetch_batch_data(tickers, period=None, start=None, end=None, interval="15m")
         try:
             # get_stock_data implements Layer 1 cache + delta fetching
             df = db_cache.get_stock_data(t, interval=interval, period=period or "59d")
-            if df is not None and not df.empty and len(df) >= min_candles:
-                return t, df
+            if df is None or df.empty:
+                return t, None, "No data available"
+            if len(df) < min_candles:
+                return t, None, f"Insufficient history (<{min_candles} candles)"
+            return t, df, None
         except Exception as e:
             print(f"Error fetching {t}: {e}")
-        return t, None
+            return t, None, "Fetch error or timeout"
 
     with concurrent.futures.ThreadPoolExecutor(max_workers=BATCH_SIZE) as executor:
         futures = {executor.submit(fetch_single, t): t for t in tickers}
         for future in concurrent.futures.as_completed(futures):
-            t, df = future.result()
+            t, df, err = future.result()
             if df is not None:
                 all_data[t] = df
+            elif errors_dict is not None and err is not None:
+                errors_dict[t] = err
 
     print(f"  ✓ Successfully fetched data for {len(all_data)} tickers.")
     return all_data

@@ -1,0 +1,18 @@
+{
+  "mock_alert": [
+    {
+      "alert_id": "mock_test_alert_123",
+      "breakout_timestamp": "2023-01-01",
+      "checks": [],
+      "key_levels": [],
+      "pattern": "CUP AND HANDLE",
+      "pattern_type": "cup_and_handle",
+      "quality_score": 0.0,
+      "raw": {},
+      "signal": "BULLISH",
+      "ticker": "RELIANCE.NS",
+      "timeframe": "1d",
+      "verdict": "UNKNOWN"
+    }
+  ]
+}

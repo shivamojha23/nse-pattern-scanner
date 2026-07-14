@@ -25,7 +25,8 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
     if n < 40:
         return []
 
-    
+    patterns_found = []
+
     # Slow Path: Full Detection
     smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
     min_prominence = np.median(smoothed) * 0.01

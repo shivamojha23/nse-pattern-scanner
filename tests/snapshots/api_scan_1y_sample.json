@@ -1,0 +1,2989 @@
+{
+  "error": "",
+  "errors": {},
+  "from_cache": false,
+  "interval": "1d",
+  "lookback": "1y",
+  "matches": [
+    {
+      "checks": [
+        {
+          "detail": "0.36% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "12.25%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-03-25 00:00:00",
+          "label": "First Bottom",
+          "price": 4026.09
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-04-17 00:00:00",
+          "label": "Peak",
+          "price": 4511.1
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-06-01 00:00:00",
+          "label": "Second Bottom",
+          "price": 4011.44
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-07-07 00:00:00",
+          "label": "Breakout",
+          "price": 4589.14
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 9.6,
+      "raw": {
+        "breakout_date": "2026-07-07 00:00:00+00:00",
+        "breakout_idx": 244,
+        "breakout_price": 4589.14,
+        "first_bottom_date": "2026-03-25 00:00:00+00:00",
+        "first_bottom_idx": 174,
+        "first_bottom_price": 4026.09,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-04-17 00:00:00+00:00",
+        "peak_idx": 187,
+        "peak_price": 4511.1,
+        "peak_rise_pct": 12.25,
+        "quality_score": 9.6,
+        "reject_reason": "",
+        "second_bottom_date": "2026-06-01 00:00:00+00:00",
+        "second_bottom_idx": 218,
+        "second_bottom_price": 4011.44,
+        "separation": 44,
+        "signal_date": "2026-07-07 00:00:00+00:00",
+        "similarity_pct": 0.36,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 1210208.0,
+        "vol_bot2_avg": 881280.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 1281103.0
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "0.23% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "7.37%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-02-10 00:00:00",
+          "label": "First Top",
+          "price": 5765.03
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-02-19 00:00:00",
+          "label": "Valley",
+          "price": 5334.0
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-02-26 00:00:00",
+          "label": "Second Top",
+          "price": 5752.0
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-03-16 00:00:00",
+          "label": "Breakdown",
+          "price": 5323.0
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 9.2,
+      "raw": {
+        "breakdown_date": "2026-03-16 00:00:00+00:00",
+        "breakdown_idx": 166,
+        "breakdown_price": 5323.0,
+        "first_top_date": "2026-02-10 00:00:00+00:00",
+        "first_top_idx": 143,
+        "first_top_price": 5765.03,
+        "pattern_type": "double_top",
+        "quality_score": 9.2,
+        "reject_reason": "",
+        "second_top_date": "2026-02-26 00:00:00+00:00",
+        "second_top_idx": 155,
+        "second_top_price": 5752.0,
+        "separation": 12,
+        "signal_date": "2026-03-16 00:00:00+00:00",
+        "similarity_pct": 0.23,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "ALKEM.NS",
+        "valley_date": "2026-02-19 00:00:00+00:00",
+        "valley_drop_pct": 7.37,
+        "valley_idx": 150,
+        "valley_price": 5334.0,
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 114499.58,
+        "vol_top1_avg": 175308.0,
+        "vol_top2_avg": 121137.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "ALKEM.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "2.53% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "8.85%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-01-29 00:00:00",
+          "label": "First Bottom",
+          "price": 3926.81
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-02-26 00:00:00",
+          "label": "Peak",
+          "price": 4328.4
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-03-25 00:00:00",
+          "label": "Second Bottom",
+          "price": 4026.09
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-04-08 00:00:00",
+          "label": "Breakout",
+          "price": 4477.81
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 7.4,
+      "raw": {
+        "breakout_date": "2026-04-08 00:00:00+00:00",
+        "breakout_idx": 181,
+        "breakout_price": 4477.81,
+        "first_bottom_date": "2026-01-29 00:00:00+00:00",
+        "first_bottom_idx": 136,
+        "first_bottom_price": 3926.81,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-02-26 00:00:00+00:00",
+        "peak_idx": 156,
+        "peak_price": 4328.4,
+        "peak_rise_pct": 8.85,
+        "quality_score": 7.4,
+        "reject_reason": "",
+        "second_bottom_date": "2026-03-25 00:00:00+00:00",
+        "second_bottom_idx": 174,
+        "second_bottom_price": 4026.09,
+        "separation": 38,
+        "signal_date": "2026-04-08 00:00:00+00:00",
+        "similarity_pct": 2.53,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 1210666.0,
+        "vol_bot2_avg": 1210208.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 888462.7
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.73% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.36%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-09-29 00:00:00",
+          "label": "First Bottom",
+          "price": 294.2
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-10-15 00:00:00",
+          "label": "Peak",
+          "price": 312.65
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-11-07 00:00:00",
+          "label": "Second Bottom",
+          "price": 299.3
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-11-14 00:00:00",
+          "label": "Breakout",
+          "price": 314.9
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 7.1,
+      "raw": {
+        "breakout_date": "2025-11-14 00:00:00+00:00",
+        "breakout_idx": 84,
+        "breakout_price": 314.9,
+        "first_bottom_date": "2025-09-29 00:00:00+00:00",
+        "first_bottom_idx": 53,
+        "first_bottom_price": 294.2,
+        "pattern_type": "double_bottom",
+        "peak_date": "2025-10-15 00:00:00+00:00",
+        "peak_idx": 64,
+        "peak_price": 312.65,
+        "peak_rise_pct": 5.36,
+        "quality_score": 7.1,
+        "reject_reason": "",
+        "second_bottom_date": "2025-11-07 00:00:00+00:00",
+        "second_bottom_idx": 79,
+        "second_bottom_price": 299.3,
+        "separation": 26,
+        "signal_date": "2025-11-14 00:00:00+00:00",
+        "similarity_pct": 1.73,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "JIOFIN.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 10279639.0,
+        "vol_bot2_avg": 9403992.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 10144362.54
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "JIOFIN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "R\u00b2 = 0.868",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "16.26%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-03-23 00:00:00",
+          "label": "Pole Start",
+          "price": 3840.5
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-04-21 00:00:00",
+          "label": "Pole Top",
+          "price": 4465.05
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-05-01 00:00:00",
+          "label": "Flag Low",
+          "price": 4370.86
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-05-08 00:00:00",
+          "label": "Breakout",
+          "price": 4494.25
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 7.1,
+      "raw": {
+        "breakout_idx": 202,
+        "breakout_price": 4494.25,
+        "flag_end_date": "2026-05-01 00:00:00+00:00",
+        "flag_end_idx": 197,
+        "flag_high_price": 4441.92,
+        "flag_low_price": 4370.86,
+        "flag_range_pct": 1.59,
+        "flag_slope": -9.2281,
+        "flag_start_date": "2026-04-22 00:00:00+00:00",
+        "flag_start_idx": 190,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 189,
+        "pole_r_squared": 0.868,
+        "pole_rise_pct": 16.26,
+        "pole_start_date": "2026-03-23 00:00:00+00:00",
+        "pole_start_idx": 172,
+        "pole_start_price": 3840.5,
+        "pole_top_date": "2026-04-21 00:00:00+00:00",
+        "pole_top_price": 4465.05,
+        "quality_score": 7.1,
+        "reject_reason": "",
+        "retracement_pct": 15.08,
+        "signal_date": "2026-05-08 00:00:00+00:00",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": true,
+        "vol_flag_pass": true,
+        "vol_pole_pass": true
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "0.21% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.76%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-03-04 00:00:00",
+          "label": "First Bottom",
+          "price": 1338.81
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-03-09 00:00:00",
+          "label": "Peak",
+          "price": 1417.45
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-04-08 00:00:00",
+          "label": "Second Bottom",
+          "price": 1341.6
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-04-29 00:00:00",
+          "label": "Breakout",
+          "price": 1418.84
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 6.7,
+      "raw": {
+        "breakout_date": "2026-04-29 00:00:00+00:00",
+        "breakout_idx": 195,
+        "breakout_price": 1418.84,
+        "first_bottom_date": "2026-03-04 00:00:00+00:00",
+        "first_bottom_idx": 159,
+        "first_bottom_price": 1338.81,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-03-09 00:00:00+00:00",
+        "peak_idx": 162,
+        "peak_price": 1417.45,
+        "peak_rise_pct": 5.76,
+        "quality_score": 6.7,
+        "reject_reason": "",
+        "second_bottom_date": "2026-04-08 00:00:00+00:00",
+        "second_bottom_idx": 181,
+        "second_bottom_price": 1341.6,
+        "separation": 22,
+        "signal_date": "2026-04-29 00:00:00+00:00",
+        "similarity_pct": 0.21,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "RELIANCE.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 22154193.0,
+        "vol_bot2_avg": 24229217.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": false,
+        "vol_sma50": 16528878.56
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "RELIANCE.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "2.93% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "7.59%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-01-09 00:00:00",
+          "label": "First Top",
+          "price": 4188.06
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-01-29 00:00:00",
+          "label": "Valley",
+          "price": 3926.81
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-02-25 00:00:00",
+          "label": "Second Top",
+          "price": 4310.85
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-03-23 00:00:00",
+          "label": "Breakdown",
+          "price": 3840.5
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 6.6,
+      "raw": {
+        "breakdown_date": "2026-03-23 00:00:00+00:00",
+        "breakdown_idx": 172,
+        "breakdown_price": 3840.5,
+        "first_top_date": "2026-01-09 00:00:00+00:00",
+        "first_top_idx": 123,
+        "first_top_price": 4188.06,
+        "pattern_type": "double_top",
+        "quality_score": 6.6,
+        "reject_reason": "",
+        "second_top_date": "2026-02-25 00:00:00+00:00",
+        "second_top_idx": 155,
+        "second_top_price": 4310.85,
+        "separation": 32,
+        "signal_date": "2026-03-23 00:00:00+00:00",
+        "similarity_pct": 2.93,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "TITAN.NS",
+        "valley_date": "2026-01-29 00:00:00+00:00",
+        "valley_drop_pct": 7.59,
+        "valley_idx": 136,
+        "valley_price": 3926.81,
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 910438.54,
+        "vol_top1_avg": 1219954.0,
+        "vol_top2_avg": 651973.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "2.46% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.69%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-11-14 00:00:00",
+          "label": "First Top",
+          "price": 5676.74
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-01-01 00:00:00",
+          "label": "Valley",
+          "price": 5419.81
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-01-13 00:00:00",
+          "label": "Second Top",
+          "price": 5816.61
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-02-13 00:00:00",
+          "label": "Breakdown",
+          "price": 5359.3
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 6.4,
+      "raw": {
+        "breakdown_date": "2026-02-13 00:00:00+00:00",
+        "breakdown_idx": 146,
+        "breakdown_price": 5359.3,
+        "first_top_date": "2025-11-14 00:00:00+00:00",
+        "first_top_idx": 84,
+        "first_top_price": 5676.74,
+        "pattern_type": "double_top",
+        "quality_score": 6.4,
+        "reject_reason": "",
+        "second_top_date": "2026-01-13 00:00:00+00:00",
+        "second_top_idx": 125,
+        "second_top_price": 5816.61,
+        "separation": 41,
+        "signal_date": "2026-02-13 00:00:00+00:00",
+        "similarity_pct": 2.46,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "ALKEM.NS",
+        "valley_date": "2026-01-01 00:00:00+00:00",
+        "valley_drop_pct": 5.69,
+        "valley_idx": 117,
+        "valley_price": 5419.81,
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 123583.2,
+        "vol_top1_avg": 240565.0,
+        "vol_top2_avg": 129556.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "ALKEM.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.06% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "6.61%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-06-09 00:00:00",
+          "label": "First Bottom",
+          "price": 122750.0
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-06-22 00:00:00",
+          "label": "Peak",
+          "price": 131560.0
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-06-29 00:00:00",
+          "label": "Second Bottom",
+          "price": 124050.0
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-07-02 00:00:00",
+          "label": "Breakout",
+          "price": 132065.0
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 6.1,
+      "raw": {
+        "breakout_date": "2026-07-02 00:00:00+00:00",
+        "breakout_idx": 240,
+        "breakout_price": 132065.0,
+        "first_bottom_date": "2026-06-09 00:00:00+00:00",
+        "first_bottom_idx": 223,
+        "first_bottom_price": 122750.0,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-06-22 00:00:00+00:00",
+        "peak_idx": 232,
+        "peak_price": 131560.0,
+        "peak_rise_pct": 6.61,
+        "quality_score": 6.1,
+        "reject_reason": "",
+        "second_bottom_date": "2026-06-29 00:00:00+00:00",
+        "second_bottom_idx": 237,
+        "second_bottom_price": 124050.0,
+        "separation": 14,
+        "signal_date": "2026-07-02 00:00:00+00:00",
+        "similarity_pct": 1.06,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "MRF.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 4716.0,
+        "vol_bot2_avg": 8373.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": false,
+        "vol_sma50": 6704.42
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "MRF.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "4.6% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.46%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-11-14 00:00:00",
+          "label": "First Top",
+          "price": 314.9
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-12-10 00:00:00",
+          "label": "Valley",
+          "price": 290.85
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-01-05 00:00:00",
+          "label": "Second Top",
+          "price": 300.4
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-01-09 00:00:00",
+          "label": "Breakdown",
+          "price": 287.25
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 5.8,
+      "raw": {
+        "breakdown_date": "2026-01-09 00:00:00+00:00",
+        "breakdown_idx": 123,
+        "breakdown_price": 287.25,
+        "first_top_date": "2025-11-14 00:00:00+00:00",
+        "first_top_idx": 84,
+        "first_top_price": 314.9,
+        "pattern_type": "double_top",
+        "quality_score": 5.8,
+        "reject_reason": "",
+        "second_top_date": "2026-01-05 00:00:00+00:00",
+        "second_top_idx": 119,
+        "second_top_price": 300.4,
+        "separation": 35,
+        "signal_date": "2026-01-09 00:00:00+00:00",
+        "similarity_pct": 4.6,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "JIOFIN.NS",
+        "valley_date": "2025-12-10 00:00:00+00:00",
+        "valley_drop_pct": 5.46,
+        "valley_idx": 102,
+        "valley_price": 290.85,
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_pattern_pass": true,
+        "vol_sma50": 8088588.38,
+        "vol_top1_avg": 10835230.0,
+        "vol_top2_avg": 10202607.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "JIOFIN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.7% diff",
+          "name": "Shoulder Symmetry",
+          "status": "PASS"
+        },
+        {
+          "detail": "LS +7.68%, RS +9.54%",
+          "name": "Head Prominence",
+          "status": "PASS"
+        },
+        {
+          "detail": "LS > Head > RS (declining)",
+          "name": "Volume Progression",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-12-12 00:00:00",
+          "label": "Left Shoulder",
+          "price": 135.46
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-01-02 00:00:00",
+          "label": "Head",
+          "price": 145.87
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-01-28 00:00:00",
+          "label": "Right Shoulder",
+          "price": 133.16
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-02-13 00:00:00",
+          "label": "Breakdown",
+          "price": 122.91
+        }
+      ],
+      "pattern": "Head and Shoulders",
+      "pattern_type": "head_and_shoulders",
+      "quality_score": 5.7,
+      "raw": {
+        "breakdown_date": "2026-02-13 00:00:00+00:00",
+        "breakdown_idx": 147,
+        "breakdown_price": 122.91,
+        "head_date": "2026-01-02 00:00:00+00:00",
+        "head_idx": 118,
+        "head_price": 145.87,
+        "head_prom_pct": 8.610064831635029,
+        "head_vs_ls_pct": 7.68,
+        "head_vs_rs_pct": 9.54,
+        "left_neckline_date": "2025-12-18 00:00:00+00:00",
+        "left_neckline_idx": 108,
+        "left_neckline_price": 130.73,
+        "left_shoulder_date": "2025-12-12 00:00:00+00:00",
+        "left_shoulder_idx": 104,
+        "left_shoulder_price": 135.46,
+        "neckline_slope": -0.17472540813943613,
+        "neckline_slope_pct": 3.07,
+        "pattern_type": "head_and_shoulders",
+        "quality_score": 5.7,
+        "reject_reason": "",
+        "right_neckline_date": "2026-01-21 00:00:00+00:00",
+        "right_neckline_idx": 131,
+        "right_neckline_price": 126.71,
+        "right_shoulder_date": "2026-01-28 00:00:00+00:00",
+        "right_shoulder_idx": 135,
+        "right_shoulder_price": 133.16,
+        "shoulder_symmetry_pct": 1.7,
+        "signal_date": "2026-02-13 00:00:00+00:00",
+        "span_candles": 31,
+        "ticker": "IREDA.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_head_avg": 11471871.0,
+        "vol_ls_avg": 4793659.0,
+        "vol_progression_pass": false,
+        "vol_rs_avg": 8705360.0,
+        "vol_sma50": 8654980.78
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "IREDA.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "R\u00b2 = 0.962",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "10.11%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-08-01 00:00:00",
+          "label": "Pole Start",
+          "price": 3305.15
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-08-25 00:00:00",
+          "label": "Pole Top",
+          "price": 3639.46
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-09-02 00:00:00",
+          "label": "Flag Low",
+          "price": 3582.25
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-09-03 00:00:00",
+          "label": "Breakout",
+          "price": 3678.53
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 5.7,
+      "raw": {
+        "breakout_idx": 35,
+        "breakout_price": 3678.53,
+        "flag_end_date": "2025-09-02 00:00:00+00:00",
+        "flag_end_idx": 34,
+        "flag_high_price": 3625.8,
+        "flag_low_price": 3582.25,
+        "flag_range_pct": 1.2,
+        "flag_slope": 3.3989,
+        "flag_start_date": "2025-08-26 00:00:00+00:00",
+        "flag_start_idx": 30,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 29,
+        "pole_r_squared": 0.962,
+        "pole_rise_pct": 10.11,
+        "pole_start_date": "2025-08-01 00:00:00+00:00",
+        "pole_start_idx": 14,
+        "pole_start_price": 3305.15,
+        "pole_top_date": "2025-08-25 00:00:00+00:00",
+        "pole_top_price": 3639.46,
+        "quality_score": 5.7,
+        "reject_reason": "",
+        "retracement_pct": 17.11,
+        "signal_date": "2025-09-03 00:00:00+00:00",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": false,
+        "vol_flag_pass": true,
+        "vol_pole_pass": true
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "R\u00b2 = 0.869",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "13.05%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-01-07 00:00:00",
+          "label": "Pole Start",
+          "price": 303.5
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-02-03 00:00:00",
+          "label": "Pole Bottom",
+          "price": 263.9
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-02-10 00:00:00",
+          "label": "Flag High",
+          "price": 270.2
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-02-16 00:00:00",
+          "label": "Breakdown",
+          "price": 262.55
+        }
+      ],
+      "pattern": "Bear Flag",
+      "pattern_type": "bear_flag",
+      "quality_score": 5.6,
+      "raw": {
+        "breakdown_idx": 148,
+        "breakdown_price": 262.55,
+        "flag_end_date": "2026-02-10 00:00:00+00:00",
+        "flag_end_idx": 144,
+        "flag_high_price": 270.2,
+        "flag_low_price": 268.0,
+        "flag_range_pct": 0.83,
+        "flag_slope": 0.37,
+        "flag_start_date": "2026-02-04 00:00:00+00:00",
+        "flag_start_idx": 140,
+        "pattern_type": "bear_flag",
+        "pole_bottom_date": "2026-02-03 00:00:00+00:00",
+        "pole_bottom_price": 263.9,
+        "pole_drop_pct": 13.05,
+        "pole_end_idx": 139,
+        "pole_r_squared": 0.869,
+        "pole_start_date": "2026-01-07 00:00:00+00:00",
+        "pole_start_idx": 121,
+        "pole_start_price": 303.5,
+        "quality_score": 5.6,
+        "reject_reason": "",
+        "retracement_pct": 15.91,
+        "signal_date": "2026-02-16 00:00:00+00:00",
+        "ticker": "JIOFIN.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_flag_pass": false,
+        "vol_pole_pass": true
+      },
+      "signal": "Bearish Continuation",
+      "ticker": "JIOFIN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "2.14% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "8.31%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-03-23 00:00:00",
+          "label": "First Top",
+          "price": 1401.32
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-04-07 00:00:00",
+          "label": "Valley",
+          "price": 1298.6
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-05-06 00:00:00",
+          "label": "Second Top",
+          "price": 1431.28
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-06-04 00:00:00",
+          "label": "Breakdown",
+          "price": 1297.7
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 5.6,
+      "raw": {
+        "breakdown_date": "2026-06-04 00:00:00+00:00",
+        "breakdown_idx": 221,
+        "breakdown_price": 1297.7,
+        "first_top_date": "2026-03-23 00:00:00+00:00",
+        "first_top_idx": 172,
+        "first_top_price": 1401.32,
+        "pattern_type": "double_top",
+        "quality_score": 5.6,
+        "reject_reason": "",
+        "second_top_date": "2026-05-06 00:00:00+00:00",
+        "second_top_idx": 200,
+        "second_top_price": 1431.28,
+        "separation": 28,
+        "signal_date": "2026-06-04 00:00:00+00:00",
+        "similarity_pct": 2.14,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "RELIANCE.NS",
+        "valley_date": "2026-04-07 00:00:00+00:00",
+        "valley_drop_pct": 8.31,
+        "valley_idx": 180,
+        "valley_price": 1298.6,
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_pattern_pass": true,
+        "vol_sma50": 19809046.68,
+        "vol_top1_avg": 18422988.0,
+        "vol_top2_avg": 15077517.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "RELIANCE.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.24% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.22%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-08-12 00:00:00",
+          "label": "First Bottom",
+          "price": 140529.44
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-08-20 00:00:00",
+          "label": "Peak",
+          "price": 148784.11
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-08-28 00:00:00",
+          "label": "Second Bottom",
+          "price": 142269.36
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-09-02 00:00:00",
+          "label": "Breakout",
+          "price": 153878.92
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 5.5,
+      "raw": {
+        "breakout_date": "2025-09-02 00:00:00+00:00",
+        "breakout_idx": 34,
+        "breakout_price": 153878.92,
+        "first_bottom_date": "2025-08-12 00:00:00+00:00",
+        "first_bottom_idx": 21,
+        "first_bottom_price": 140529.44,
+        "pattern_type": "double_bottom",
+        "peak_date": "2025-08-20 00:00:00+00:00",
+        "peak_idx": 26,
+        "peak_price": 148784.11,
+        "peak_rise_pct": 5.22,
+        "quality_score": 5.5,
+        "reject_reason": "",
+        "second_bottom_date": "2025-08-28 00:00:00+00:00",
+        "second_bottom_idx": 31,
+        "second_bottom_price": 142269.36,
+        "separation": 10,
+        "signal_date": "2025-09-02 00:00:00+00:00",
+        "similarity_pct": 1.24,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "MRF.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 6206.0,
+        "vol_bot2_avg": 9804.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": false,
+        "vol_sma50": 6558.65625
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "MRF.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "N/A"
+        },
+        {
+          "detail": "",
+          "name": "Pennant Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "Ratio = 0.591",
+          "name": "Convergence",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-12-31 00:00:00",
+          "label": "Pole Start",
+          "price": 1563.17
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-01-29 00:00:00",
+          "label": "Pole End",
+          "price": 1384.6
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-01-30 00:00:00",
+          "label": "Pennant High",
+          "price": 1482.64
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-02-26 00:00:00",
+          "label": "Breakout",
+          "price": 1400.33
+        }
+      ],
+      "pattern": "Pennant",
+      "pattern_type": "pennant",
+      "quality_score": 5.5,
+      "raw": {
+        "adx_value": 34.65,
+        "breakout_date": "2026-02-26 00:00:00+00:00",
+        "breakout_idx": 156,
+        "breakout_price": 1400.33,
+        "convergence_ratio": 0.591,
+        "direction": "bearish",
+        "lower_slope": 0.7065379809298157,
+        "pattern_type": "pennant",
+        "pennant_end_date": "2026-02-23 00:00:00+00:00",
+        "pennant_end_idx": 153,
+        "pennant_high": 1482.64,
+        "pennant_low": 1329.35,
+        "pennant_start_date": "2026-01-30 00:00:00+00:00",
+        "pennant_start_idx": 137,
+        "pole_change_pct": -11.42,
+        "pole_end_date": "2026-01-29 00:00:00+00:00",
+        "pole_end_idx": 136,
+        "pole_end_price": 1384.6,
+        "pole_start_date": "2025-12-31 00:00:00+00:00",
+        "pole_start_idx": 116,
+        "pole_start_price": 1563.17,
+        "quality_score": 5.5,
+        "r_squared": 0.0,
+        "reject_reason": "",
+        "res_high_intercept": 1441.6266723027272,
+        "res_low_intercept": 1408.37452105324,
+        "signal_date": "2026-02-26 00:00:00+00:00",
+        "ticker": "RELIANCE.NS",
+        "upper_slope": -0.0941723870768502,
+        "verdict": "VALID",
+        "vol_breakout_pass": true,
+        "vol_pennant_pass": true
+      },
+      "signal": "Continuation (pole direction)",
+      "ticker": "RELIANCE.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.5% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.76%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-05-13 00:00:00",
+          "label": "First Bottom",
+          "price": 737.4
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-05-25 00:00:00",
+          "label": "Peak",
+          "price": 774.05
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-06-09 00:00:00",
+          "label": "Second Bottom",
+          "price": 726.34
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-06-17 00:00:00",
+          "label": "Breakout",
+          "price": 774.29
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 5.4,
+      "raw": {
+        "breakout_date": "2026-06-17 00:00:00+00:00",
+        "breakout_idx": 230,
+        "breakout_price": 774.29,
+        "first_bottom_date": "2026-05-13 00:00:00+00:00",
+        "first_bottom_idx": 205,
+        "first_bottom_price": 737.4,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-05-25 00:00:00+00:00",
+        "peak_idx": 213,
+        "peak_price": 774.05,
+        "peak_rise_pct": 5.76,
+        "quality_score": 5.4,
+        "reject_reason": "",
+        "second_bottom_date": "2026-06-09 00:00:00+00:00",
+        "second_bottom_idx": 224,
+        "second_bottom_price": 726.34,
+        "separation": 19,
+        "signal_date": "2026-06-17 00:00:00+00:00",
+        "similarity_pct": 1.5,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "HDFCBANK.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 36741518.0,
+        "vol_bot2_avg": 34008385.0,
+        "vol_breakout_pass": false,
+        "vol_pattern_pass": true,
+        "vol_sma50": 41285373.44
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "HDFCBANK.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "R\u00b2 = 0.938",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "9.63%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-05-05 00:00:00",
+          "label": "Pole Start",
+          "price": 1456.86
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-05-19 00:00:00",
+          "label": "Pole Bottom",
+          "price": 1316.61
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-05-26 00:00:00",
+          "label": "Flag High",
+          "price": 1360.71
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-05-29 00:00:00",
+          "label": "Breakdown",
+          "price": 1315.12
+        }
+      ],
+      "pattern": "Bear Flag",
+      "pattern_type": "bear_flag",
+      "quality_score": 5.3,
+      "raw": {
+        "breakdown_idx": 217,
+        "breakdown_price": 1315.12,
+        "flag_end_date": "2026-05-26 00:00:00+00:00",
+        "flag_end_idx": 214,
+        "flag_high_price": 1360.71,
+        "flag_low_price": 1343.39,
+        "flag_range_pct": 1.32,
+        "flag_slope": 1.0552,
+        "flag_start_date": "2026-05-20 00:00:00+00:00",
+        "flag_start_idx": 210,
+        "pattern_type": "bear_flag",
+        "pole_bottom_date": "2026-05-19 00:00:00+00:00",
+        "pole_bottom_price": 1316.61,
+        "pole_drop_pct": 9.63,
+        "pole_end_idx": 209,
+        "pole_r_squared": 0.938,
+        "pole_start_date": "2026-05-05 00:00:00+00:00",
+        "pole_start_idx": 199,
+        "pole_start_price": 1456.86,
+        "quality_score": 5.3,
+        "reject_reason": "",
+        "retracement_pct": 31.44,
+        "signal_date": "2026-05-29 00:00:00+00:00",
+        "ticker": "RELIANCE.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_flag_pass": true,
+        "vol_pole_pass": false
+      },
+      "signal": "Bearish Continuation",
+      "ticker": "RELIANCE.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "3.31% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "10.23%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-12-05 00:00:00",
+          "label": "First Bottom",
+          "price": 3800.83
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-01-07 00:00:00",
+          "label": "Peak",
+          "price": 4259.22
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-01-29 00:00:00",
+          "label": "Second Bottom",
+          "price": 3926.81
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-02-12 00:00:00",
+          "label": "Breakout",
+          "price": 4261.82
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 5.0,
+      "raw": {
+        "breakout_date": "2026-02-12 00:00:00+00:00",
+        "breakout_idx": 146,
+        "breakout_price": 4261.82,
+        "first_bottom_date": "2025-12-05 00:00:00+00:00",
+        "first_bottom_idx": 99,
+        "first_bottom_price": 3800.83,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-01-07 00:00:00+00:00",
+        "peak_idx": 121,
+        "peak_price": 4259.22,
+        "peak_rise_pct": 10.23,
+        "quality_score": 5.0,
+        "reject_reason": "",
+        "second_bottom_date": "2026-01-29 00:00:00+00:00",
+        "second_bottom_idx": 136,
+        "second_bottom_price": 3926.81,
+        "separation": 37,
+        "signal_date": "2026-02-12 00:00:00+00:00",
+        "similarity_pct": 3.31,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 714282.0,
+        "vol_bot2_avg": 1210666.0,
+        "vol_breakout_pass": true,
+        "vol_pattern_pass": false,
+        "vol_sma50": 820379.78
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "0.43% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "7.12%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-09-10 00:00:00",
+          "label": "First Bottom",
+          "price": 145249.25
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-09-23 00:00:00",
+          "label": "Peak",
+          "price": 155928.83
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-09-29 00:00:00",
+          "label": "Second Bottom",
+          "price": 145879.23
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-10-09 00:00:00",
+          "label": "Breakout",
+          "price": 156348.81
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 4.9,
+      "raw": {
+        "breakout_date": "2025-10-09 00:00:00+00:00",
+        "breakout_idx": 60,
+        "breakout_price": 156348.81,
+        "first_bottom_date": "2025-09-10 00:00:00+00:00",
+        "first_bottom_idx": 40,
+        "first_bottom_price": 145249.25,
+        "pattern_type": "double_bottom",
+        "peak_date": "2025-09-23 00:00:00+00:00",
+        "peak_idx": 49,
+        "peak_price": 155928.83,
+        "peak_rise_pct": 7.12,
+        "quality_score": 4.9,
+        "reject_reason": "",
+        "second_bottom_date": "2025-09-29 00:00:00+00:00",
+        "second_bottom_idx": 53,
+        "second_bottom_price": 145879.23,
+        "separation": 13,
+        "signal_date": "2025-10-09 00:00:00+00:00",
+        "similarity_pct": 0.43,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "MRF.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 6697.0,
+        "vol_bot2_avg": 7711.0,
+        "vol_breakout_pass": false,
+        "vol_pattern_pass": false,
+        "vol_sma50": 7453.54
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "MRF.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "R\u00b2 = 0.839",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "10.33%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-10-03 00:00:00",
+          "label": "Pole Start",
+          "price": 1357.13
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-10-29 00:00:00",
+          "label": "Pole Top",
+          "price": 1497.28
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-11-06 00:00:00",
+          "label": "Flag Low",
+          "price": 1466.32
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-11-12 00:00:00",
+          "label": "Breakout",
+          "price": 1504.54
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 4.4,
+      "raw": {
+        "breakout_idx": 82,
+        "breakout_price": 1504.54,
+        "flag_end_date": "2025-11-06 00:00:00+00:00",
+        "flag_end_idx": 78,
+        "flag_high_price": 1489.21,
+        "flag_low_price": 1466.32,
+        "flag_range_pct": 1.53,
+        "flag_slope": 0.1891,
+        "flag_start_date": "2025-10-30 00:00:00+00:00",
+        "flag_start_idx": 74,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 73,
+        "pole_r_squared": 0.839,
+        "pole_rise_pct": 10.33,
+        "pole_start_date": "2025-10-03 00:00:00+00:00",
+        "pole_start_idx": 56,
+        "pole_start_price": 1357.13,
+        "pole_top_date": "2025-10-29 00:00:00+00:00",
+        "pole_top_price": 1497.28,
+        "quality_score": 4.4,
+        "reject_reason": "",
+        "retracement_pct": 22.09,
+        "signal_date": "2025-11-12 00:00:00+00:00",
+        "ticker": "RELIANCE.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": false,
+        "vol_flag_pass": true,
+        "vol_pole_pass": true
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "RELIANCE.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.61% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "9.39%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-07-31 00:00:00",
+          "label": "First Bottom",
+          "price": 3336.35
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-09-04 00:00:00",
+          "label": "Peak",
+          "price": 3679.03
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-09-29 00:00:00",
+          "label": "Second Bottom",
+          "price": 3390.08
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-10-20 00:00:00",
+          "label": "Breakout",
+          "price": 3724.98
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 4.4,
+      "raw": {
+        "breakout_date": "2025-10-20 00:00:00+00:00",
+        "breakout_idx": 67,
+        "breakout_price": 3724.98,
+        "first_bottom_date": "2025-07-31 00:00:00+00:00",
+        "first_bottom_idx": 13,
+        "first_bottom_price": 3336.35,
+        "pattern_type": "double_bottom",
+        "peak_date": "2025-09-04 00:00:00+00:00",
+        "peak_idx": 36,
+        "peak_price": 3679.03,
+        "peak_rise_pct": 9.39,
+        "quality_score": 4.4,
+        "reject_reason": "",
+        "second_bottom_date": "2025-09-29 00:00:00+00:00",
+        "second_bottom_idx": 53,
+        "second_bottom_price": 3390.08,
+        "separation": 40,
+        "signal_date": "2025-10-20 00:00:00+00:00",
+        "similarity_pct": 1.61,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 546085.0,
+        "vol_bot2_avg": 2142125.0,
+        "vol_breakout_pass": false,
+        "vol_pattern_pass": false,
+        "vol_sma50": 871807.78
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "3.78% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "6.94%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-05-06 00:00:00",
+          "label": "First Top",
+          "price": 252.44
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-05-12 00:00:00",
+          "label": "Valley",
+          "price": 230.47
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-05-27 00:00:00",
+          "label": "Second Top",
+          "price": 242.89
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-06-08 00:00:00",
+          "label": "Breakdown",
+          "price": 228.86
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 4.3,
+      "raw": {
+        "breakdown_date": "2026-06-08 00:00:00+00:00",
+        "breakdown_idx": 223,
+        "breakdown_price": 228.86,
+        "first_top_date": "2026-05-06 00:00:00+00:00",
+        "first_top_idx": 200,
+        "first_top_price": 252.44,
+        "pattern_type": "double_top",
+        "quality_score": 4.3,
+        "reject_reason": "",
+        "second_top_date": "2026-05-27 00:00:00+00:00",
+        "second_top_idx": 215,
+        "second_top_price": 242.89,
+        "separation": 15,
+        "signal_date": "2026-06-08 00:00:00+00:00",
+        "similarity_pct": 3.78,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "JIOFIN.NS",
+        "valley_date": "2026-05-12 00:00:00+00:00",
+        "valley_drop_pct": 6.94,
+        "valley_idx": 204,
+        "valley_price": 230.47,
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_pattern_pass": true,
+        "vol_sma50": 19882270.52,
+        "vol_top1_avg": 13700131.0,
+        "vol_top2_avg": 10899814.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "JIOFIN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "1.9% diff",
+          "name": "Shoulder Symmetry",
+          "status": "PASS"
+        },
+        {
+          "detail": "LS +4.22%, RS +6.24%",
+          "name": "Head Prominence",
+          "status": "PASS"
+        },
+        {
+          "detail": "LS > Head > RS (declining)",
+          "name": "Volume Progression",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-02-26 00:00:00",
+          "label": "Left Shoulder",
+          "price": 4328.4
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-04-17 00:00:00",
+          "label": "Head",
+          "price": 4511.1
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-06-05 00:00:00",
+          "label": "Right Shoulder",
+          "price": 4246.27
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-06-10 00:00:00",
+          "label": "Breakdown",
+          "price": 4028.88
+        }
+      ],
+      "pattern": "Head and Shoulders",
+      "pattern_type": "head_and_shoulders",
+      "quality_score": 4.2,
+      "raw": {
+        "breakdown_date": "2026-06-10 00:00:00+00:00",
+        "breakdown_idx": 225,
+        "breakdown_price": 4028.88,
+        "head_date": "2026-04-17 00:00:00+00:00",
+        "head_idx": 187,
+        "head_price": 4511.1,
+        "head_prom_pct": 5.228875823059887,
+        "head_vs_ls_pct": 4.22,
+        "head_vs_rs_pct": 6.24,
+        "left_neckline_date": "2026-03-23 00:00:00+00:00",
+        "left_neckline_idx": 172,
+        "left_neckline_price": 3840.5,
+        "left_shoulder_date": "2026-02-26 00:00:00+00:00",
+        "left_shoulder_idx": 156,
+        "left_shoulder_price": 4328.4,
+        "neckline_slope": 3.716064453125,
+        "neckline_slope_pct": 4.45,
+        "pattern_type": "head_and_shoulders",
+        "quality_score": 4.2,
+        "reject_reason": "",
+        "right_neckline_date": "2026-06-01 00:00:00+00:00",
+        "right_neckline_idx": 218,
+        "right_neckline_price": 4011.44,
+        "right_shoulder_date": "2026-06-05 00:00:00+00:00",
+        "right_shoulder_idx": 222,
+        "right_shoulder_price": 4246.27,
+        "shoulder_symmetry_pct": 1.9,
+        "signal_date": "2026-06-10 00:00:00+00:00",
+        "span_candles": 66,
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_head_avg": 1153713.0,
+        "vol_ls_avg": 722241.0,
+        "vol_progression_pass": false,
+        "vol_rs_avg": 1028404.0,
+        "vol_sma50": 1296336.68
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "4.19% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "6.28%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-04-24 00:00:00",
+          "label": "First Top",
+          "price": 135.89
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-05-12 00:00:00",
+          "label": "Valley",
+          "price": 124.69
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-05-27 00:00:00",
+          "label": "Second Top",
+          "price": 130.2
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-06-03 00:00:00",
+          "label": "Breakdown",
+          "price": 122.83
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 4.1,
+      "raw": {
+        "breakdown_date": "2026-06-03 00:00:00+00:00",
+        "breakdown_idx": 220,
+        "breakdown_price": 122.83,
+        "first_top_date": "2026-04-24 00:00:00+00:00",
+        "first_top_idx": 192,
+        "first_top_price": 135.89,
+        "pattern_type": "double_top",
+        "quality_score": 4.1,
+        "reject_reason": "",
+        "second_top_date": "2026-05-27 00:00:00+00:00",
+        "second_top_idx": 215,
+        "second_top_price": 130.2,
+        "separation": 23,
+        "signal_date": "2026-06-03 00:00:00+00:00",
+        "similarity_pct": 4.19,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "IREDA.NS",
+        "valley_date": "2026-05-12 00:00:00+00:00",
+        "valley_drop_pct": 6.28,
+        "valley_idx": 204,
+        "valley_price": 124.69,
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_pattern_pass": true,
+        "vol_sma50": 10017113.38,
+        "vol_top1_avg": 19916988.0,
+        "vol_top2_avg": 10895657.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "IREDA.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "3.48% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "6.15%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-02-10 00:00:00",
+          "label": "First Top",
+          "price": 1451.79
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-03-04 00:00:00",
+          "label": "Valley",
+          "price": 1338.81
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-03-23 00:00:00",
+          "label": "Second Top",
+          "price": 1401.32
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-03-30 00:00:00",
+          "label": "Breakdown",
+          "price": 1337.71
+        }
+      ],
+      "pattern": "Double Top",
+      "pattern_type": "double_top",
+      "quality_score": 4.1,
+      "raw": {
+        "breakdown_date": "2026-03-30 00:00:00+00:00",
+        "breakdown_idx": 176,
+        "breakdown_price": 1337.71,
+        "first_top_date": "2026-02-10 00:00:00+00:00",
+        "first_top_idx": 144,
+        "first_top_price": 1451.79,
+        "pattern_type": "double_top",
+        "quality_score": 4.1,
+        "reject_reason": "",
+        "second_top_date": "2026-03-23 00:00:00+00:00",
+        "second_top_idx": 172,
+        "second_top_price": 1401.32,
+        "separation": 28,
+        "signal_date": "2026-03-30 00:00:00+00:00",
+        "similarity_pct": 3.48,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "RELIANCE.NS",
+        "valley_date": "2026-03-04 00:00:00+00:00",
+        "valley_drop_pct": 6.15,
+        "valley_idx": 159,
+        "valley_price": 1338.81,
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_pattern_pass": false,
+        "vol_sma50": 14661960.68,
+        "vol_top1_avg": 9296346.0,
+        "vol_top2_avg": 18422988.0
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "RELIANCE.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "R\u00b2 = 0.892",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "10.76%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-03-30 00:00:00",
+          "label": "Pole Start",
+          "price": 719.65
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-04-10 00:00:00",
+          "label": "Pole Top",
+          "price": 797.12
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-04-20 00:00:00",
+          "label": "Flag Low",
+          "price": 781.77
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-04-21 00:00:00",
+          "label": "Breakout",
+          "price": 798.54
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 3.9,
+      "raw": {
+        "breakout_idx": 189,
+        "breakout_price": 798.54,
+        "flag_end_date": "2026-04-20 00:00:00+00:00",
+        "flag_end_idx": 188,
+        "flag_high_price": 796.72,
+        "flag_low_price": 781.77,
+        "flag_range_pct": 1.88,
+        "flag_slope": -0.8362,
+        "flag_start_date": "2026-04-13 00:00:00+00:00",
+        "flag_start_idx": 184,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 183,
+        "pole_r_squared": 0.892,
+        "pole_rise_pct": 10.76,
+        "pole_start_date": "2026-03-30 00:00:00+00:00",
+        "pole_start_idx": 176,
+        "pole_start_price": 719.65,
+        "pole_top_date": "2026-04-10 00:00:00+00:00",
+        "pole_top_price": 797.12,
+        "quality_score": 3.9,
+        "reject_reason": "",
+        "retracement_pct": 19.81,
+        "signal_date": "2026-04-21 00:00:00+00:00",
+        "ticker": "HDFCBANK.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": false,
+        "vol_flag_pass": false,
+        "vol_pole_pass": true
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "HDFCBANK.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "4.47% diff",
+          "name": "Shoulder Symmetry",
+          "status": "PASS"
+        },
+        {
+          "detail": "LS +8.03%, RS +3.41%",
+          "name": "Head Prominence",
+          "status": "PASS"
+        },
+        {
+          "detail": "LS > Head > RS (declining)",
+          "name": "Volume Progression",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-08-19 00:00:00",
+          "label": "Left Shoulder",
+          "price": 148.12
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-09-19 00:00:00",
+          "label": "Head",
+          "price": 160.02
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-10-29 00:00:00",
+          "label": "Right Shoulder",
+          "price": 154.75
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-10-31 00:00:00",
+          "label": "Breakdown",
+          "price": 151.13
+        }
+      ],
+      "pattern": "Head and Shoulders",
+      "pattern_type": "head_and_shoulders",
+      "quality_score": 3.8,
+      "raw": {
+        "breakdown_date": "2025-10-31 00:00:00+00:00",
+        "breakdown_idx": 75,
+        "breakdown_price": 151.13,
+        "head_date": "2025-09-19 00:00:00+00:00",
+        "head_idx": 47,
+        "head_price": 160.02,
+        "head_prom_pct": 5.719254485584247,
+        "head_vs_ls_pct": 8.03,
+        "head_vs_rs_pct": 3.41,
+        "left_neckline_date": "2025-08-29 00:00:00+00:00",
+        "left_neckline_idx": 32,
+        "left_neckline_price": 139.76,
+        "left_shoulder_date": "2025-08-19 00:00:00+00:00",
+        "left_shoulder_idx": 25,
+        "left_shoulder_price": 148.12,
+        "neckline_slope": 0.2874755859375,
+        "neckline_slope_pct": 4.11,
+        "pattern_type": "head_and_shoulders",
+        "quality_score": 3.8,
+        "reject_reason": "",
+        "right_neckline_date": "2025-09-26 00:00:00+00:00",
+        "right_neckline_idx": 52,
+        "right_neckline_price": 145.51,
+        "right_shoulder_date": "2025-10-29 00:00:00+00:00",
+        "right_shoulder_idx": 73,
+        "right_shoulder_price": 154.75,
+        "shoulder_symmetry_pct": 4.47,
+        "signal_date": "2025-10-31 00:00:00+00:00",
+        "span_candles": 48,
+        "ticker": "IREDA.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_head_avg": 11872120.0,
+        "vol_ls_avg": 4442549.0,
+        "vol_progression_pass": false,
+        "vol_rs_avg": 6496237.0,
+        "vol_sma50": 8324969.4
+      },
+      "signal": "Bearish Reversal",
+      "ticker": "IREDA.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "R\u00b2 = 0.826",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "10.16%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-03-30 00:00:00",
+          "label": "Pole Start",
+          "price": 224.1
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-04-08 00:00:00",
+          "label": "Pole Top",
+          "price": 246.86
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-04-20 00:00:00",
+          "label": "Flag Low",
+          "price": 237.15
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-04-23 00:00:00",
+          "label": "Breakout",
+          "price": 248.66
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 3.7,
+      "raw": {
+        "breakout_idx": 191,
+        "breakout_price": 248.66,
+        "flag_end_date": "2026-04-20 00:00:00+00:00",
+        "flag_end_idx": 188,
+        "flag_high_price": 243.86,
+        "flag_low_price": 237.15,
+        "flag_range_pct": 2.72,
+        "flag_slope": -0.0057,
+        "flag_start_date": "2026-04-09 00:00:00+00:00",
+        "flag_start_idx": 182,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 181,
+        "pole_r_squared": 0.826,
+        "pole_rise_pct": 10.16,
+        "pole_start_date": "2026-03-30 00:00:00+00:00",
+        "pole_start_idx": 176,
+        "pole_start_price": 224.1,
+        "pole_top_date": "2026-04-08 00:00:00+00:00",
+        "pole_top_price": 246.86,
+        "quality_score": 3.7,
+        "reject_reason": "",
+        "retracement_pct": 42.66,
+        "signal_date": "2026-04-23 00:00:00+00:00",
+        "ticker": "JIOFIN.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": true,
+        "vol_flag_pass": false,
+        "vol_pole_pass": true
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "JIOFIN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "R\u00b2 = 0.88",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "8.5%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-07-23 00:00:00",
+          "label": "Pole Start",
+          "price": 156.08
+        },
+        {
+          "color": "#F44336",
+          "date": "2025-08-12 00:00:00",
+          "label": "Pole Bottom",
+          "price": 142.81
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2025-08-20 00:00:00",
+          "label": "Flag High",
+          "price": 148.12
+        },
+        {
+          "color": "#FF9800",
+          "date": "2025-08-28 00:00:00",
+          "label": "Breakdown",
+          "price": 140.29
+        }
+      ],
+      "pattern": "Bear Flag",
+      "pattern_type": "bear_flag",
+      "quality_score": 3.5,
+      "raw": {
+        "breakdown_idx": 31,
+        "breakdown_price": 140.29,
+        "flag_end_date": "2025-08-20 00:00:00+00:00",
+        "flag_end_idx": 26,
+        "flag_high_price": 148.12,
+        "flag_low_price": 143.1,
+        "flag_range_pct": 3.52,
+        "flag_slope": 1.4055,
+        "flag_start_date": "2025-08-13 00:00:00+00:00",
+        "flag_start_idx": 22,
+        "pattern_type": "bear_flag",
+        "pole_bottom_date": "2025-08-12 00:00:00+00:00",
+        "pole_bottom_price": 142.81,
+        "pole_drop_pct": 8.5,
+        "pole_end_idx": 21,
+        "pole_r_squared": 0.88,
+        "pole_start_date": "2025-07-23 00:00:00+00:00",
+        "pole_start_idx": 7,
+        "pole_start_price": 156.08,
+        "quality_score": 3.5,
+        "reject_reason": "",
+        "retracement_pct": 40.03,
+        "signal_date": "2025-08-28 00:00:00+00:00",
+        "ticker": "IREDA.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": true,
+        "vol_flag_pass": true,
+        "vol_pole_pass": false
+      },
+      "signal": "Bearish Continuation",
+      "ticker": "IREDA.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "R\u00b2 = 0.861",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "9.81%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-06-11 00:00:00",
+          "label": "Pole Start",
+          "price": 4012.04
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-06-19 00:00:00",
+          "label": "Pole Top",
+          "price": 4405.44
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-06-26 00:00:00",
+          "label": "Flag Low",
+          "price": 4277.26
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-07-02 00:00:00",
+          "label": "Breakout",
+          "price": 4466.44
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 3.3,
+      "raw": {
+        "breakout_idx": 241,
+        "breakout_price": 4466.44,
+        "flag_end_date": "2026-06-26 00:00:00+00:00",
+        "flag_end_idx": 237,
+        "flag_high_price": 4358.2,
+        "flag_low_price": 4277.26,
+        "flag_range_pct": 1.84,
+        "flag_slope": -17.5824,
+        "flag_start_date": "2026-06-22 00:00:00+00:00",
+        "flag_start_idx": 233,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 232,
+        "pole_r_squared": 0.861,
+        "pole_rise_pct": 9.81,
+        "pole_start_date": "2026-06-11 00:00:00+00:00",
+        "pole_start_idx": 226,
+        "pole_start_price": 4012.04,
+        "pole_top_date": "2026-06-19 00:00:00+00:00",
+        "pole_top_price": 4405.44,
+        "quality_score": 3.3,
+        "reject_reason": "",
+        "retracement_pct": 32.58,
+        "signal_date": "2026-07-02 00:00:00+00:00",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": false,
+        "vol_flag_pass": true,
+        "vol_pole_pass": false
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakout Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "R\u00b2 = 0.825",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "8.17%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-06-10 00:00:00",
+          "label": "Pole Start",
+          "price": 4028.88
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-06-22 00:00:00",
+          "label": "Pole Top",
+          "price": 4358.2
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-06-29 00:00:00",
+          "label": "Flag Low",
+          "price": 4263.21
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-06-30 00:00:00",
+          "label": "Breakout",
+          "price": 4389.6
+        }
+      ],
+      "pattern": "Bull Flag",
+      "pattern_type": "bull_flag",
+      "quality_score": 2.9,
+      "raw": {
+        "breakout_idx": 239,
+        "breakout_price": 4389.6,
+        "flag_end_date": "2026-06-29 00:00:00+00:00",
+        "flag_end_idx": 238,
+        "flag_high_price": 4309.66,
+        "flag_low_price": 4263.21,
+        "flag_range_pct": 1.07,
+        "flag_slope": -8.841,
+        "flag_start_date": "2026-06-23 00:00:00+00:00",
+        "flag_start_idx": 234,
+        "pattern_type": "bull_flag",
+        "pole_end_idx": 233,
+        "pole_r_squared": 0.825,
+        "pole_rise_pct": 8.17,
+        "pole_start_date": "2026-06-10 00:00:00+00:00",
+        "pole_start_idx": 225,
+        "pole_start_price": 4028.88,
+        "pole_top_date": "2026-06-22 00:00:00+00:00",
+        "pole_top_price": 4358.2,
+        "quality_score": 2.9,
+        "reject_reason": "",
+        "retracement_pct": 28.84,
+        "signal_date": "2026-06-30 00:00:00+00:00",
+        "ticker": "TITAN.NS",
+        "verdict": "VALID",
+        "vol_breakout_pass": false,
+        "vol_flag_pass": true,
+        "vol_pole_pass": false
+      },
+      "signal": "Bullish Continuation",
+      "ticker": "TITAN.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "",
+          "name": "Pole Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Flag Volume",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Breakdown Volume",
+          "status": "FAIL"
+        },
+        {
+          "detail": "R\u00b2 = 0.815",
+          "name": "Pole Linearity (R\u00b2)",
+          "status": "PASS"
+        },
+        {
+          "detail": "10.57%",
+          "name": "Pole Strength",
+          "status": "PASS"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2026-02-18 00:00:00",
+          "label": "Pole Start",
+          "price": 127.2
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-03-09 00:00:00",
+          "label": "Pole Bottom",
+          "price": 113.75
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-03-18 00:00:00",
+          "label": "Flag High",
+          "price": 117.35
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-03-23 00:00:00",
+          "label": "Breakdown",
+          "price": 109.93
+        }
+      ],
+      "pattern": "Bear Flag",
+      "pattern_type": "bear_flag",
+      "quality_score": 2.7,
+      "raw": {
+        "breakdown_idx": 172,
+        "breakdown_price": 109.93,
+        "flag_end_date": "2026-03-18 00:00:00+00:00",
+        "flag_end_idx": 169,
+        "flag_high_price": 117.35,
+        "flag_low_price": 114.19,
+        "flag_range_pct": 2.77,
+        "flag_slope": 0.1407,
+        "flag_start_date": "2026-03-10 00:00:00+00:00",
+        "flag_start_idx": 163,
+        "pattern_type": "bear_flag",
+        "pole_bottom_date": "2026-03-09 00:00:00+00:00",
+        "pole_bottom_price": 113.75,
+        "pole_drop_pct": 10.57,
+        "pole_end_idx": 162,
+        "pole_r_squared": 0.815,
+        "pole_start_date": "2026-02-18 00:00:00+00:00",
+        "pole_start_idx": 150,
+        "pole_start_price": 127.2,
+        "quality_score": 2.7,
+        "reject_reason": "",
+        "retracement_pct": 26.78,
+        "signal_date": "2026-03-23 00:00:00+00:00",
+        "ticker": "IREDA.NS",
+        "verdict": "VALID",
+        "vol_breakdown_pass": false,
+        "vol_flag_pass": true,
+        "vol_pole_pass": false
+      },
+      "signal": "Bearish Continuation",
+      "ticker": "IREDA.NS"
+    },
+    {
+      "checks": [
+        {
+          "detail": "4.27% diff (\u22646% required)",
+          "name": "Peak/Bottom Similarity",
+          "status": "PASS"
+        },
+        {
+          "detail": "5.04%",
+          "name": "Depth/Height",
+          "status": "PASS"
+        },
+        {
+          "detail": "",
+          "name": "Volume Pattern",
+          "status": "FAIL"
+        },
+        {
+          "detail": "",
+          "name": "Breakout/Breakdown Volume",
+          "status": "FAIL"
+        }
+      ],
+      "key_levels": [
+        {
+          "color": "#2196F3",
+          "date": "2025-12-30 00:00:00",
+          "label": "First Bottom",
+          "price": 5425.26
+        },
+        {
+          "color": "#F44336",
+          "date": "2026-01-12 00:00:00",
+          "label": "Peak",
+          "price": 5820.08
+        },
+        {
+          "color": "#4CAF50",
+          "date": "2026-02-03 00:00:00",
+          "label": "Second Bottom",
+          "price": 5656.9
+        },
+        {
+          "color": "#FF9800",
+          "date": "2026-02-11 00:00:00",
+          "label": "Breakout",
+          "price": 5842.9
+        }
+      ],
+      "pattern": "Double Bottom",
+      "pattern_type": "double_bottom",
+      "quality_score": 1.7,
+      "raw": {
+        "breakout_date": "2026-02-11 00:00:00+00:00",
+        "breakout_idx": 144,
+        "breakout_price": 5842.9,
+        "first_bottom_date": "2025-12-30 00:00:00+00:00",
+        "first_bottom_idx": 115,
+        "first_bottom_price": 5425.26,
+        "pattern_type": "double_bottom",
+        "peak_date": "2026-01-12 00:00:00+00:00",
+        "peak_idx": 124,
+        "peak_price": 5820.08,
+        "peak_rise_pct": 5.04,
+        "quality_score": 1.7,
+        "reject_reason": "",
+        "second_bottom_date": "2026-02-03 00:00:00+00:00",
+        "second_bottom_idx": 138,
+        "second_bottom_price": 5656.9,
+        "separation": 23,
+        "signal_date": "2026-02-11 00:00:00+00:00",
+        "similarity_pct": 4.27,
+        "stage": "",
+        "status": "confirmed",
+        "ticker": "ALKEM.NS",
+        "verdict": "VALID",
+        "vol_bot1_avg": 55120.0,
+        "vol_bot2_avg": 109994.0,
+        "vol_breakout_pass": false,
+        "vol_pattern_pass": false,
+        "vol_sma50": 104678.4
+      },
+      "signal": "Bullish Reversal",
+      "ticker": "ALKEM.NS"
+    }
+  ],
+  "pattern": "all",
+  "skipped_tickers": 0,
+  "total_scanned": 7,
+  "total_with_data": 7
+}

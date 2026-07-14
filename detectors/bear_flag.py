@@ -25,6 +25,8 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     if n < 30:
         return []
 
+    patterns_found = []
+
     # Slow Path: Full Detection
     rolling_max = pd.Series(prices).rolling(window=MAX_POLE_CANDLES, min_periods=5).max().values
     potential_drop = np.zeros(n)

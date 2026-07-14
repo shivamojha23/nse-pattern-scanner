@@ -25,6 +25,8 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     if n < 30:
         return []
 
+    patterns_found = []
+
     # Slow Path: Full Detection
     rolling_min = pd.Series(prices).rolling(window=MAX_POLE_CANDLES, min_periods=5).min().values
     potential_return = np.zeros(n)
