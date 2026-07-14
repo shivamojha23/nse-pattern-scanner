@@ -370,7 +370,7 @@ def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False, is_l
     import json
     import time
     import sqlite3
-    from backend.main import _make_serializable
+    from core.serialization import _make_serializable
     from db_cache import CACHE_DB_PATH
     
     start_date_str = df.index.min().strftime('%Y-%m-%d')
@@ -492,7 +492,7 @@ def _is_pattern_from_today(pattern):
 def _process_alert_history(ticker, df, ptype, patterns):
     import sqlite3
     import json
-    from backend.main import _make_serializable
+    from core.serialization import _make_serializable
     from db_cache import CACHE_DB_PATH
     
     conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)

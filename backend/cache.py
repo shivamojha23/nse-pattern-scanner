@@ -46,6 +46,8 @@ class ScanCache:
         self._store = OrderedDict()  # {key: {"data": ..., "timestamp": ...}}
         self._ttl = ttl_seconds      # Time-to-live in seconds
         self._max_size = max_size    # Maximum bounded size
+        import threading
+        self._lock = threading.Lock()
 
     def get(self, key):
         """
@@ -61,19 +63,20 @@ class ScanCache:
         dict or None
             The cached data, or None if not found / expired.
         """
-        entry = self._store.get(key)
-        if entry is None:
-            return None
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
 
-        age = time.time() - entry["timestamp"]
-        if age > self._ttl:
-            # Expired — remove it and return None
-            del self._store[key]
-            return None
+            age = time.time() - entry["timestamp"]
+            if age > self._ttl:
+                # Expired — remove it and return None
+                del self._store[key]
+                return None
 
-        # MRU: Move accessed item to the end
-        self._store.move_to_end(key)
-        return entry["data"]
+            # MRU: Move accessed item to the end
+            self._store.move_to_end(key)
+            return entry["data"]
 
     def set(self, key, data):
         """
@@ -86,13 +89,14 @@ class ScanCache:
         data : any
             The data to cache (typically a dict).
         """
-        self._store[key] = {
-            "data": data,
-            "timestamp": time.time(),
-        }
-        # LRU: if size exceeds maximum, remove the first (oldest accessed) item
-        if len(self._store) > self._max_size:
-            self._store.popitem(last=False)
+        with self._lock:
+            self._store[key] = {
+                "data": data,
+                "timestamp": time.time(),
+            }
+            # LRU: if size exceeds maximum, remove the first (oldest accessed) item
+            if len(self._store) > self._max_size:
+                self._store.popitem(last=False)
 
     def clear(self):
         """Remove all cached entries."""

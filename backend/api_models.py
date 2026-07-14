@@ -116,29 +116,7 @@ def _format_date(ts):
     return s.split("+")[0].replace("T", " ").strip()
 
 
-def _make_serializable(obj):
-    """
-    Recursively convert numpy types and other non-JSON-serializable types
-    to Python built-in types so FastAPI can serialize them to JSON.
-    """
-    if isinstance(obj, dict):
-        return {k: _make_serializable(v) for k, v in obj.items()}
-    elif isinstance(obj, (list, tuple)):
-        return [_make_serializable(item) for item in obj]
-    elif isinstance(obj, (np.integer,)):
-        return int(obj)
-    elif isinstance(obj, (np.floating,)):
-        return float(obj)
-    elif isinstance(obj, np.ndarray):
-        return obj.tolist()
-    elif isinstance(obj, (np.bool_,)):
-        return bool(obj)
-    elif isinstance(obj, pd.Timestamp):
-        return str(obj)
-    elif obj is None or isinstance(obj, (str, int, float, bool)):
-        return obj
-    else:
-        return str(obj)
+from core.serialization import _make_serializable
 
 
 def _extract_pattern_key_levels(pattern_dict):

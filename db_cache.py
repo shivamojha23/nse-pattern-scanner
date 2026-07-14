@@ -330,7 +330,7 @@ def validate_watchlist(tickers, list_name):
     
     # Check format (simple sanity check on first few items)
     valid_pattern = re.compile(r'^[A-Z0-9\-&]+\.NS$')
-    for t in tickers[:5]:
+    for t in tickers:
         if not valid_pattern.match(t):
             return False, f"invalid ticker format detected: {t}"
             

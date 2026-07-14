@@ -26,6 +26,8 @@ import os
 import time
 import traceback
 import logging
+import asyncio
+import re
 
 import numpy as np
 import pandas as pd
@@ -95,7 +97,6 @@ app = FastAPI(
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],       # Allow all origins (fine for local development)
-    allow_credentials=True,
     allow_methods=["*"],       # Allow GET, POST, etc.
     allow_headers=["*"],       # Allow all headers
 )
@@ -183,9 +184,10 @@ async def market_status():
         }
 
     except Exception as e:
+        traceback.print_exc()
         return {
             "is_open": False,
-            "status": f"Error checking market status: {str(e)}",
+            "status": "Error checking market status. Please try again.",
             "ist_time": "",
             "ist_date": "",
             "next_event": "",
@@ -206,7 +208,8 @@ async def watchlist():
             "tickers": tickers,
         }
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to fetch watchlist: {str(e)}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail="Failed to fetch watchlist due to an internal error.")
 
 
 # =============================================================================
@@ -379,7 +382,7 @@ async def run_scan(
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"Scan failed: {str(e)}"
+            detail="Scan failed due to an internal server error."
         )
 
 
@@ -403,20 +406,23 @@ async def get_candles(
     # Validate params
     validated_lookback = validate_yfinance_params(interval, lookback)
 
-    # Ensure .NS suffix
+    # Ensure .NS suffix and format
+    if not re.match(r'^[A-Z0-9&-]{1,20}(\.NS)?$', ticker):
+        raise HTTPException(status_code=400, detail="Invalid ticker format")
     if not ticker.endswith(".NS"):
         ticker = ticker + ".NS"
 
     try:
-        # Fetch data via Layer 1 Cache
+        # Fetch using asyncio.to_thread for concurrency
         from db_cache import get_stock_data
-        df = get_stock_data(
+        df = await asyncio.to_thread(
+            get_stock_data,
             ticker=ticker,
             period=validated_lookback,
             interval=interval
         )
-
-        if df.empty:
+        
+        if df is None or df.empty:
             raise HTTPException(
                 status_code=404,
                 detail=f"No data found for {ticker}. It may be delisted or the ticker may be wrong."
@@ -477,11 +483,11 @@ async def get_candles(
 
     except HTTPException:
         raise  # Re-raise our own HTTPExceptions
-    except Exception as e:
+    except Exception:
         traceback.print_exc()
         raise HTTPException(
             status_code=500,
-            detail=f"Failed to fetch candles for {ticker}: {str(e)}"
+            detail="Failed to fetch candle data."
         )
 
 
@@ -509,7 +515,7 @@ async def api_live_scan(
             patterns_to_scan = ["all"]
 
     # Get tickers
-    tickers = get_nifty_list()
+    tickers_to_scan = get_nifty_list()
     
     # Validate Interval
     valid_intervals = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
@@ -522,9 +528,10 @@ async def api_live_scan(
     # Validate yfinance lookback
     validated_lookback = validate_yfinance_params(interval, lookback)
 
-    # Run scan_watchlist
-    new_alerts = scan_watchlist(
-        tickers=tickers,
+    # Run scan_watchlist using asyncio.to_thread
+    new_alerts = await asyncio.to_thread(
+        scan_watchlist,
+        tickers=tickers_to_scan,
         patterns_to_scan=patterns_to_scan,
         period=validated_lookback,
         interval=interval
@@ -537,7 +544,6 @@ async def api_live_scan(
     
     now_str = datetime.datetime.now().isoformat()
     valid_new_results = []
-    
     for pat in new_alerts:
         ptype = pat.get("pattern_type", "")
         ticker = pat.get("ticker", "UNKNOWN")
