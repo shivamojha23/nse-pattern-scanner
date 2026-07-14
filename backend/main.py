@@ -25,6 +25,7 @@ import datetime
 import os
 import time
 import traceback
+import logging
 
 import numpy as np
 import pandas as pd
@@ -35,6 +36,7 @@ from fastapi.responses import FileResponse
 import sqlite3
 import json
 from fastapi.staticfiles import StaticFiles
+from contextlib import asynccontextmanager
 
 # Import our scanner adapter and cache
 from backend.scanner import (
@@ -59,10 +61,33 @@ from backend.api_models import (
 #  APP SETUP
 # =============================================================================
 
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Prints a startup banner showing the local URL and all endpoints."""
+    print("\n" + "=" * 60)
+    print("  🚀  NSE Pattern Scanner API — RUNNING")
+    print("=" * 60)
+    print("  Local URL : http://localhost:8000")
+    print("")
+    print("  Available Endpoints:")
+    print("  ────────────────────────────────────────")
+    print("  GET  /api/health         → Health check")
+    print("  GET  /api/market_status  → NSE market open/closed")
+    print("  GET  /api/watchlist      → Nifty ticker list")
+    print("  GET  /api/scan           → Run pattern scan")
+    print("  GET  /api/candles        → OHLCV candle data")
+    print("  GET  /docs               → Interactive API docs (Swagger)")
+    print("  GET  /                   → Trading Terminal UI")
+    print("  ────────────────────────────────────────")
+    print("  ✨ Open http://localhost:8000 in your browser to use the UI.")
+    print("=" * 60 + "\n")
+    yield
+
 app = FastAPI(
     title="NSE Pattern Scanner API",
     description="Trading terminal API — 7 chart patterns on NSE stocks",
     version="1.0.0",
+    lifespan=lifespan,
 )
 
 # CORS — allow the frontend (opened as a local file or from a different port)
@@ -82,32 +107,6 @@ scan_cache = ScanCache(ttl_seconds=900, max_size=100)
 _backend_dir = os.path.dirname(os.path.abspath(__file__))
 _project_root = os.path.dirname(_backend_dir)
 _frontend_dir = os.path.join(_project_root, "frontend")
-
-
-# =============================================================================
-#  STARTUP EVENT — Print available endpoints
-# =============================================================================
-
-@app.on_event("startup")
-async def startup_message():
-    """Prints a startup banner showing the local URL and all endpoints."""
-    print("\n" + "=" * 60)
-    print("  🚀  NSE Pattern Scanner API — RUNNING")
-    print("=" * 60)
-    print("  Local URL : http://localhost:8000")
-    print("")
-    print("  Available Endpoints:")
-    print("  ────────────────────────────────────────")
-    print("  GET  /api/health         → Health check")
-    print("  GET  /api/market_status  → NSE market open/closed")
-    print("  GET  /api/watchlist      → Nifty ticker list")
-    print("  GET  /api/scan           → Run pattern scan")
-    print("  GET  /api/candles        → OHLCV candle data")
-    print("  GET  /docs               → Interactive API docs (Swagger)")
-    print("  GET  /                   → Trading Terminal UI")
-    print("  ────────────────────────────────────────")
-    print("  ✨ Open http://localhost:8000 in your browser to use the UI.")
-    print("=" * 60 + "\n")
 
 
 # =============================================================================
@@ -150,6 +149,7 @@ async def market_status():
                 second=0, microsecond=0
             )
             remaining = close_dt - ist_now
+            remaining = max(remaining, datetime.timedelta(0))
             next_event = f"Closes in {remaining.seconds // 3600}h {(remaining.seconds % 3600) // 60}m"
         else:
             # Market is closed — calculate time until next open
@@ -169,6 +169,7 @@ async def market_status():
                     days_ahead = 1
                 next_open += datetime.timedelta(days=days_ahead)
             remaining = next_open - ist_now
+            remaining = max(remaining, datetime.timedelta(0))
             hours = remaining.seconds // 3600
             minutes = (remaining.seconds % 3600) // 60
             next_event = f"Opens in {remaining.days}d {hours}h {minutes}m" if remaining.days > 0 else f"Opens in {hours}h {minutes}m"
@@ -603,8 +604,8 @@ async def get_live_alerts():
     for row in rows:
         try:
             alerts.append(json.loads(row[0]))
-        except:
-            pass
+        except (json.JSONDecodeError, KeyError) as e:
+            logging.error(f"Failed to parse live alert from DB: {e}")
     return {"alerts": alerts}
 
 @app.post("/api/live_alerts/dismiss", response_model=DismissResponse)

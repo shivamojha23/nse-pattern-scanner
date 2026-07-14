@@ -440,8 +440,8 @@
                     </div>`;
             }).join('');
 
-            // Quality score bar (normalize: C&H scores are 0-80, others 0-10)
-            const maxScore = result.pattern_type === 'cup_and_handle' ? 80 : 10;
+            // Quality score bar (all patterns use 0-10 scale)
+            const maxScore = 10;
             const scorePct = Math.min(100, (result.quality_score / maxScore) * 100);
 
             // Pattern description
