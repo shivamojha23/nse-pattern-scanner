@@ -223,3 +223,104 @@ def refine_trough(idx, prices, window=4):
     end = min(len(prices), idx + window + 1)
     local_idx = int(np.argmin(prices[start:end]))
     return start + local_idx
+
+def compute_atr(highs, lows, closes, period=ATR_PERIOD):
+    """
+    Computes the Average True Range (ATR) over the given period.
+
+    True Range = max(High-Low, |High-PrevClose|, |Low-PrevClose|)
+    ATR = Simple Moving Average of True Range over `period` bars.
+
+    Uses only numpy/pandas — no TA-Lib needed.
+
+    Parameters
+    ----------
+    highs, lows, closes : array-like
+        High, Low, Close price arrays (same length).
+    period : int
+        ATR averaging period (default 14).
+
+    Returns
+    -------
+    float
+        The most recent ATR value, or 0.0 if insufficient data.
+    """
+    highs = np.array(highs, dtype=float)
+    lows = np.array(lows, dtype=float)
+    closes = np.array(closes, dtype=float)
+    if len(highs) < period + 1:
+        return 0.0
+    tr = np.maximum(highs[1:] - lows[1:], np.maximum(np.abs(highs[1:] - closes[:-1]), np.abs(lows[1:] - closes[:-1])))
+    if len(tr) < period:
+        return float(np.mean(tr)) if len(tr) > 0 else 0.0
+    return float(np.mean(tr[-period:]))
+
+def compute_adx(highs, lows, closes, period=14):
+    """
+    Computes the Average Directional Index (ADX) over the given period.
+    Uses Wilder's Smoothing.
+    
+    Parameters
+    ----------
+    highs, lows, closes : array-like
+        High, Low, Close price arrays (same length).
+    period : int
+        ADX averaging period (default 14).
+        
+    Returns
+    -------
+    adx : np.ndarray
+        Array of ADX values corresponding to the inputs. Values are padded
+        with np.nan at the beginning where ADX cannot be computed.
+    """
+    highs = np.array(highs, dtype=float)
+    lows = np.array(lows, dtype=float)
+    closes = np.array(closes, dtype=float)
+    n = len(closes)
+    adx = np.full(n, np.nan)
+    if n < period * 2:
+        return adx
+    tr1 = highs[1:] - lows[1:]
+    tr2 = np.abs(highs[1:] - closes[:-1])
+    tr3 = np.abs(lows[1:] - closes[:-1])
+    tr = np.maximum(tr1, np.maximum(tr2, tr3))
+    tr = np.insert(tr, 0, np.nan)
+    up_move = highs[1:] - highs[:-1]
+    down_move = lows[:-1] - lows[1:]
+    plus_dm = np.where((up_move > down_move) & (up_move > 0), up_move, 0.0)
+    minus_dm = np.where((down_move > up_move) & (down_move > 0), down_move, 0.0)
+    plus_dm = np.insert(plus_dm, 0, np.nan)
+    minus_dm = np.insert(minus_dm, 0, np.nan)
+
+    def wilders_smoothing(data, period):
+        smoothed = np.full_like(data, np.nan)
+        first_valid = period
+        if len(data) <= first_valid:
+            return smoothed
+        smoothed[first_valid] = np.sum(data[1:first_valid + 1])
+        for i in range(first_valid + 1, len(data)):
+            smoothed[i] = smoothed[i - 1] - smoothed[i - 1] / period + data[i]
+        return smoothed
+    atr = wilders_smoothing(tr, period)
+    plus_di_smooth = wilders_smoothing(plus_dm, period)
+    minus_di_smooth = wilders_smoothing(minus_dm, period)
+    plus_di = np.full_like(atr, np.nan)
+    minus_di = np.full_like(atr, np.nan)
+    valid_atr = atr > 0
+    plus_di[valid_atr] = 100 * (plus_di_smooth[valid_atr] / atr[valid_atr])
+    minus_di[valid_atr] = 100 * (minus_di_smooth[valid_atr] / atr[valid_atr])
+    dx = np.full_like(atr, np.nan)
+    di_sum = plus_di + minus_di
+    valid_di = di_sum > 0
+    dx[valid_di] = 100 * np.abs(plus_di[valid_di] - minus_di[valid_di]) / di_sum[valid_di]
+    first_dx = -1
+    for i in range(n):
+        if not np.isnan(dx[i]):
+            first_dx = i
+            break
+    if first_dx == -1 or first_dx + period > n:
+        return adx
+    adx[first_dx + period - 1] = np.mean(dx[first_dx:first_dx + period])
+    for i in range(first_dx + period, n):
+        adx[i] = (adx[i - 1] * (period - 1) + dx[i]) / period
+    return adx
