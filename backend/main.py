@@ -56,7 +56,8 @@ from backend.cache import ScanCache
 from backend.api_models import (
     HealthResponse, MarketStatusResponse, WatchlistResponse, ScanResponse, 
     CandlesResponse, LiveScanResponse, LiveAlertsResponse, DismissResponse, DismissRequest,
-    _format_date, _make_serializable, _extract_pattern_key_levels, _extract_checks
+    _format_date, _make_serializable, _extract_pattern_key_levels, _extract_checks,
+    _extract_pattern_status
 )
 
 # =============================================================================
@@ -315,7 +316,7 @@ async def run_scan(
                     best_patterns = {}
                     for pat in patterns:
                         # Filter out forming if not in live_mode
-                        if not live_mode and pat.get("status") == "forming":
+                        if not live_mode and _extract_pattern_status(pat) == "forming":
                             continue
                             
                         # Deduplicate by timeline (signal_date)
@@ -334,6 +335,7 @@ async def run_scan(
                             "pattern": PATTERN_NAMES.get(ptype, ptype),
                             "pattern_type": ptype,
                             "signal": PATTERN_SIGNALS.get(ptype, ""),
+                            "status": _extract_pattern_status(pat),
                             "quality_score": pat.get("quality_score", 0),
                             "key_levels": _extract_pattern_key_levels(pat),
                             "checks": _extract_checks(pat),
@@ -568,6 +570,7 @@ async def api_live_scan(
                 "pattern": PATTERN_NAMES.get(ptype, ptype.upper()),
                 "pattern_type": ptype,
                 "signal": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
+                "status": _extract_pattern_status(pat),
                 "verdict": pat.get("verdict", "UNKNOWN"),
                 "quality_score": pat.get("quality_score", 0),
                 "key_levels": _extract_pattern_key_levels(pat),

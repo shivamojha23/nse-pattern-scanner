@@ -37,6 +37,7 @@ class ScanMatch(BaseModel):
     pattern: str
     pattern_type: str
     signal: str
+    status: str = "confirmed"
     quality_score: float
     key_levels: List[KeyLevel]
     checks: List[PatternCheck]
@@ -77,6 +78,7 @@ class LiveAlertItem(BaseModel):
     pattern: str
     pattern_type: str
     signal: str
+    status: str = "confirmed"
     verdict: str
     quality_score: float
     key_levels: List[KeyLevel]
@@ -381,3 +383,25 @@ def _extract_checks(pattern_dict):
         })
 
     return checks
+
+
+def _extract_pattern_status(pattern_dict):
+    """
+    Derives "confirmed" or "forming" from detector output.
+
+    - double_top / double_bottom: have explicit `status` field
+    - cup_and_handle: has `breakout_confirmed` boolean
+    - All others: only emit on breakout -> always "confirmed" (until Track B)
+    """
+    ptype = pattern_dict.get("pattern_type", "")
+
+    # Double top/bottom have an explicit status field
+    if ptype in ("double_top", "double_bottom"):
+        return pattern_dict.get("status", "confirmed")
+
+    # Cup and handle uses breakout_confirmed boolean
+    if ptype == "cup_and_handle":
+        return "confirmed" if pattern_dict.get("breakout_confirmed", True) else "forming"
+
+    # Track B detectors - always confirmed until forming logic is added
+    return "confirmed"

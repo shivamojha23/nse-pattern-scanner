@@ -266,9 +266,17 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             is_valid = False
             reject_reason = "Handle pullback too small (<1%)."
         elif not breakout_confirmed:
-            is_valid = False
-            reject_reason = (f"No breakout confirmed within "
-                             f"{MAX_HANDLE_LOOKFORWARD_CANDLES} candles.")
+            # ── FORMING STATE (Track A) ──
+            # Cup geometry is valid + handle exists, but breakout not yet confirmed.
+            # Skip post-breakout checks (pause, slope, handle depth/duration, cup:handle ratio)
+            # — they only apply after breakout. Rim stability still checked below.
+            rim_window_start = max(0, right_rim_idx - 2)
+            rim_window_end = min(len(prices), right_rim_idx + 3)
+            rim_window_prices = prices[rim_window_start:rim_window_end]
+            if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
+                is_valid = False
+                reject_reason = "Right rim is too spiky (failed stability check)."
+            # If rim is stable, this is a valid forming pattern — is_valid stays True
         elif pause_duration < MIN_PAUSE_CANDLES:
             is_valid = False
             reject_reason = (f"No real handle — immediate continuation "
