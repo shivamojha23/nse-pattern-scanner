@@ -37,6 +37,8 @@
         let volumeSeries = null;    // Volume histogram series
         let priceLines = [];        // Current price level lines on chart
         let isDarkMode = true;      // Theme state
+        let liveResults = [];       // Live scan results (separate from backtest)
+        let livePopupOpen = false;  // Whether the popup is visible
 
         // ──────────────────────────────────────────────────────────
         //  DOM REFERENCES
@@ -63,6 +65,15 @@
             chartContainer: document.getElementById('chart'),
             chartOverlay: document.getElementById('chartOverlay'),
             detailPanel: document.getElementById('detailPanel'),
+            // Live popup elements
+            liveScanToggle: document.getElementById('liveScanToggle'),
+            liveAlertsBadge: document.getElementById('liveAlertsBadge'),
+            livePopup: document.getElementById('livePopup'),
+            livePopupOverlay: document.getElementById('livePopupOverlay'),
+            livePopupCount: document.getElementById('livePopupCount'),
+            livePopupList: document.getElementById('livePopupList'),
+            showFormingToggle: document.getElementById('showFormingToggle'),
+            closePopupBtn: document.getElementById('closePopupBtn'),
         };
 
         // ──────────────────────────────────────────────────────────
@@ -545,7 +556,7 @@
         }
 
         // ──────────────────────────────────────────────────────────
-        //  LIVE ALERTS
+        //  LIVE SCAN POPUP
         // ──────────────────────────────────────────────────────────
 
         let liveScanIntervalId = null;
@@ -572,132 +583,127 @@
             }, 6000);
         }
 
-        async function loadLiveAlerts() {
-            try {
-                const response = await fetch(`${API_BASE}/api/live_alerts`);
-                if (!response.ok) return;
-                const data = await response.json();
-
-                const alertsList = document.getElementById('alertsList');
-                if (!data.alerts || data.alerts.length === 0) {
-                    document.getElementById('alertsCount').textContent = '0';
-                    alertsList.innerHTML = `
-                        <div class="empty-state" id="alertsEmptyState">
-                            <div class="icon">🔔</div>
-                            <div class="text">No live alerts yet. Start Live Scan to monitor.</div>
-                        </div>`;
-                    return;
-                }
-
-                document.getElementById('alertsCount').textContent = data.alerts.length;
-                alertsList.innerHTML = '';
-
-                data.alerts.forEach(alert => {
-                    renderAlertCard(alert, false);
-                });
-            } catch (e) {
-                console.error("Failed to load live alerts", e);
-            }
+        function toggleLivePopup() {
+            livePopupOpen = !livePopupOpen;
+            els.livePopup.classList.toggle('hidden', !livePopupOpen);
+            els.livePopupOverlay.classList.toggle('hidden', !livePopupOpen);
         }
 
-        async function dismissAlert(alertId, btnEl) {
-            // Remove from UI immediately
-            const card = btnEl.closest('.alert-card');
-            if (card) card.remove();
+        function closeLivePopup() {
+            livePopupOpen = false;
+            els.livePopup.classList.add('hidden');
+            els.livePopupOverlay.classList.add('hidden');
+        }
+
+        /**
+         * Standalone rendering function for the live popup.
+         * This is completely separate from renderResults() (used for backtest).
+         * Sorts: Confirmed first, then Forming, within each group by quality score desc.
+         */
+        function renderLivePopupResults() {
+            const showForming = els.showFormingToggle.checked;
+
+            // Filter based on toggle
+            let filtered = [...liveResults];
+            if (!showForming) {
+                filtered = filtered.filter(r => r.status !== 'forming');
+            }
+
+            // Sort: confirmed first, then forming, within each group by quality desc
+            filtered.sort((a, b) => {
+                const statusOrder = { 'confirmed': 0, 'forming': 1 };
+                const sA = statusOrder[a.status] ?? 2;
+                const sB = statusOrder[b.status] ?? 2;
+                if (sA !== sB) return sA - sB;
+                return (b.quality_score || 0) - (a.quality_score || 0);
+            });
 
             // Update count
-            const countEl = document.getElementById('alertsCount');
-            let count = parseInt(countEl.textContent) - 1;
-            countEl.textContent = count > 0 ? count : 0;
+            els.livePopupCount.textContent = filtered.length;
 
-            if (count <= 0) {
-                document.getElementById('alertsList').innerHTML = `
-                        <div class="empty-state" id="alertsEmptyState">
-                            <div class="icon">🔔</div>
-                            <div class="text">No live alerts yet. Start Live Scan to monitor.</div>
-                        </div>`;
+            // Update badge
+            const badgeCount = liveResults.length;
+            els.liveAlertsBadge.textContent = badgeCount;
+            els.liveAlertsBadge.classList.toggle('has-alerts', badgeCount > 0);
+
+            if (filtered.length === 0) {
+                els.livePopupList.innerHTML = `
+                    <div class="empty-state">
+                        <div class="icon">📭</div>
+                        <div class="text">${showForming ? 'No live results yet. Run a live scan.' : 'No confirmed patterns in live results.<br>Toggle "Show Forming" to see forming patterns.'}</div>
+                    </div>`;
+                return;
             }
 
-            // Call API
-            try {
-                await fetch(`${API_BASE}/api/live_alerts/dismiss`, {
-                    method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json'
-                    },
-                    body: JSON.stringify({ alert_id: alertId })
-                });
-            } catch (e) {
-                console.error("Failed to dismiss alert", e);
+            // Group into confirmed and forming sections
+            const confirmed = filtered.filter(r => r.status === 'confirmed');
+            const forming = filtered.filter(r => r.status === 'forming');
+
+            let html = '';
+
+            if (confirmed.length > 0) {
+                html += `<div class="live-popup-separator">✅ Confirmed (${confirmed.length})</div>`;
+                html += confirmed.map(r => buildLiveResultItem(r)).join('');
             }
+
+            if (forming.length > 0) {
+                html += `<div class="live-popup-separator">⏳ Forming (${forming.length})</div>`;
+                html += forming.map(r => buildLiveResultItem(r)).join('');
+            }
+
+            els.livePopupList.innerHTML = html;
         }
 
-        // Make dismissAlert globally accessible for onclick
-        window.dismissAlert = dismissAlert;
+        function buildLiveResultItem(result) {
+            const icon = PATTERN_ICONS[result.pattern_type] || { emoji: '📊', bg: '#333' };
+            const status = result.status || 'confirmed';
+            const statusLabel = status === 'forming' ? '⏳ Forming' : '✅ Confirmed';
+            const statusClass = status === 'forming' ? 'forming' : 'confirmed';
 
-        function renderAlertCard(alert, isNew = false) {
-            const alertsList = document.getElementById('alertsList');
-            const emptyState = document.getElementById('alertsEmptyState');
-            if (emptyState) emptyState.remove();
-
-            // Check if already exists in UI
-            if (document.getElementById(`alert-${alert.alert_id}`)) {
-                return false; // Did not render duplicate
-            }
-
-            const card = document.createElement('div');
-            card.className = 'alert-card' + (isNew ? ' new-alert' : '');
-            card.id = `alert-${alert.alert_id}`;
-
-            const signalHtml = alert.signal === 'BULLISH' ? '🟢 Bullish' : (alert.signal === 'BEARISH' ? '🔴 Bearish' : '⚪ Neutral');
-
-            // Calc time ago roughly
-            let timeAgo = '';
-            if (alert.detected_at) {
-                const ms = Date.now() - new Date(alert.detected_at).getTime();
-                const mins = Math.floor(ms / 60000);
-                if (mins < 1) timeAgo = 'Just now';
-                else if (mins < 60) timeAgo = `${mins} min ago`;
-                else timeAgo = `${Math.floor(mins / 60)} hr ago`;
-            }
-
-            card.innerHTML = `
-                <div class="alert-card-header">
-                    <div class="alert-ticker">${alert.ticker.replace('.NS', '')} ${isNew ? '<span class="alert-badge" id="badge-' + alert.alert_id + '">NEW</span>' : ''}</div>
-                    <div class="alert-dismiss" onclick="dismissAlert('${alert.alert_id}', this)" title="Dismiss forever">&times;</div>
-                </div>
-                <div class="alert-body">
-                    <div class="alert-detail">
-                        <span>Pattern:</span>
-                        <strong>${alert.pattern}</strong>
+            return `
+                <div class="live-result-item status-${statusClass}"
+                     onclick="selectLiveResult('${result.ticker}', '${result.pattern_type}')">
+                    <div class="result-icon" style="background:${icon.bg}">${icon.emoji}</div>
+                    <div class="live-result-info">
+                        <div class="live-result-ticker">${result.ticker.replace('.NS', '')}</div>
+                        <div class="live-result-pattern">${result.pattern}</div>
                     </div>
-                    <div class="alert-detail">
-                        <span>Signal:</span>
-                        <span>${signalHtml}</span>
+                    <div class="live-result-meta">
+                        <div class="live-result-score">${result.quality_score}</div>
+                        <span class="status-badge ${statusClass}">${statusLabel}</span>
                     </div>
-                    <div class="alert-detail">
-                        <span>Quality:</span>
-                        <strong>${alert.quality_score}</strong>
-                    </div>
-                    <div class="alert-time">${timeAgo}</div>
-                </div>
-            `;
-
-            // Prepend so newest is at the top
-            alertsList.insertBefore(card, alertsList.firstChild);
-
-            if (isNew) {
-                setTimeout(() => {
-                    const badge = document.getElementById(`badge-${alert.alert_id}`);
-                    if (badge) {
-                        badge.style.opacity = '0';
-                        setTimeout(() => badge.remove(), 1000);
-                    }
-                }, 10000);
-            }
-
-            return true; // Rendered successfully
+                </div>`;
         }
+
+        async function selectLiveResult(ticker, patternType) {
+            // Find the result in liveResults
+            const result = liveResults.find(r => r.ticker === ticker && r.pattern_type === patternType);
+            if (!result) return;
+
+            selectedResult = result;
+
+            // Close popup
+            closeLivePopup();
+
+            // Clear previous chart state
+            clearChartState();
+
+            // Load candles
+            const interval = els.intervalSelect.value;
+            const lookback = els.lookbackSelect.value;
+            const data = await loadCandles(result.ticker, interval, lookback);
+
+            if (selectedResult !== result) return;
+
+            if (data && data.candles && data.candles.length > 0) {
+                setChartData(data.candles);
+                addPatternMarkers(result.key_levels, data.candles);
+            }
+
+            renderDetailPanel(result);
+        }
+
+        window.selectLiveResult = selectLiveResult;
 
         async function runLiveScan() {
             if (!els.liveAlertsToggle.checked) return;
@@ -712,23 +718,24 @@
 
                 const data = await response.json();
                 if (data.alerts && data.alerts.length > 0) {
-                    let addedCount = 0;
+                    // Merge new alerts into liveResults (dedup by ticker + pattern_type)
                     data.alerts.forEach(alert => {
-                        const rendered = renderAlertCard(alert, true);
-                        if (rendered) {
-                            addedCount++;
-                            // Push into current results if not already there to update main view
-                            const exists = scanResults.find(r => r.ticker === alert.ticker && r.pattern_type === alert.pattern_type);
-                            if (!exists) {
-                                scanResults.unshift(alert);
-                            }
+                        const existsIdx = liveResults.findIndex(
+                            r => r.ticker === alert.ticker && r.pattern_type === alert.pattern_type
+                        );
+                        if (existsIdx >= 0) {
+                            liveResults[existsIdx] = alert; // Update existing
+                        } else {
+                            liveResults.push(alert);
                         }
                     });
 
-                    if (addedCount > 0) {
-                        const countEl = document.getElementById('alertsCount');
-                        countEl.textContent = parseInt(countEl.textContent) + addedCount;
-                        renderResults();
+                    renderLivePopupResults();
+
+                    // Show toast for genuinely new alerts
+                    const newCount = data.alerts.length;
+                    if (newCount > 0) {
+                        showToast('🔔 Live Scan', `${newCount} pattern${newCount > 1 ? 's' : ''} detected`);
                     }
                 }
             } catch (err) {
@@ -739,11 +746,17 @@
         function toggleLiveAlerts() {
             if (els.liveAlertsToggle.checked) {
                 showToast("Live Alerts ON", "Scanning for new patterns every minute.");
+                els.liveScanToggle.classList.add('active');
+                els.liveScanToggle.innerHTML = '🟢 Live Scan <span class="live-badge" id="liveAlertsBadge">' + liveResults.length + '</span>';
+                els.liveAlertsBadge = document.getElementById('liveAlertsBadge');
                 // Run one immediately, then every 60 seconds
                 runLiveScan();
                 liveScanIntervalId = setInterval(runLiveScan, 60000);
             } else {
                 showToast("Live Alerts OFF", "Background polling stopped.");
+                els.liveScanToggle.classList.remove('active');
+                els.liveScanToggle.innerHTML = '🔴 Live Scan <span class="live-badge" id="liveAlertsBadge">' + liveResults.length + '</span>';
+                els.liveAlertsBadge = document.getElementById('liveAlertsBadge');
                 if (liveScanIntervalId) {
                     clearInterval(liveScanIntervalId);
                     liveScanIntervalId = null;
@@ -762,6 +775,10 @@
             els.themeToggle.addEventListener('click', toggleTheme);
             els.sortSelect.addEventListener('change', renderResults);
             els.liveAlertsToggle.addEventListener('change', toggleLiveAlerts);
+            els.liveScanToggle.addEventListener('click', toggleLivePopup);
+            els.closePopupBtn.addEventListener('click', closeLivePopup);
+            els.livePopupOverlay.addEventListener('click', closeLivePopup);
+            els.showFormingToggle.addEventListener('change', renderLivePopupResults);
 
             // Initialize chart
             initChart();
@@ -773,8 +790,19 @@
             // Fetch market status
             await fetchMarketStatus();
 
-            // Load live alerts history
-            await loadLiveAlerts();
+            // Load live alerts history from API and populate the popup
+            try {
+                const response = await fetch(`${API_BASE}/api/live_alerts`);
+                if (response.ok) {
+                    const data = await response.json();
+                    if (data.alerts && data.alerts.length > 0) {
+                        liveResults = data.alerts;
+                        renderLivePopupResults();
+                    }
+                }
+            } catch (e) {
+                console.error("Failed to load live alerts history", e);
+            }
 
             // Auto-refresh market status every 60 seconds
             setInterval(fetchMarketStatus, 60000);

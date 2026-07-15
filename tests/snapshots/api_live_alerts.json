@@ -10,6 +10,7 @@
       "quality_score": 0.0,
       "raw": {},
       "signal": "BULLISH",
+      "status": "confirmed",
       "ticker": "RELIANCE.NS",
       "timeframe": "1d",
       "verdict": "UNKNOWN"

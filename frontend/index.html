@@ -60,6 +60,10 @@
                 </div>
                 <button class="btn btn-icon" id="refreshBtn" title="Refresh scan">🔄</button>
                 <button class="btn btn-icon" id="themeToggle" title="Toggle light/dark mode">🌙</button>
+                <button class="btn btn-live" id="liveScanToggle" title="Toggle live scan popup">
+                    🔴 Live Scan
+                    <span class="live-badge" id="liveAlertsBadge">0</span>
+                </button>
             </div>
         </header>
 
@@ -158,19 +162,33 @@
                 </div>
             </div>
 
-            <!-- Right Panel: Live Alerts -->
-            <aside class="right-panel" id="liveAlertsPanel">
-                <div class="alerts-header">
-                    <h3>Live Alerts History</h3>
-                    <span class="results-count" id="alertsCount">0</span>
+        </div>
+
+        <!-- Live Scan Popup (hidden by default) -->
+        <div class="live-popup-overlay hidden" id="livePopupOverlay"></div>
+        <div class="live-popup-container hidden" id="livePopup">
+            <div class="live-popup-header">
+                <div class="live-popup-title-row">
+                    <h3>🔴 Live Scan Results</h3>
+                    <span class="results-count" id="livePopupCount">0</span>
                 </div>
-                <div class="alerts-list" id="alertsList">
-                    <div class="empty-state" id="alertsEmptyState">
-                        <div class="icon">🔔</div>
-                        <div class="text">No live alerts yet. Start Live Scan to monitor.</div>
-                    </div>
+                <div class="live-popup-controls">
+                    <label class="live-popup-toggle-label">
+                        <input type="checkbox" id="showFormingToggle" checked>
+                        <span>Show Forming ⏳</span>
+                    </label>
+                    <button class="btn btn-icon live-popup-close" id="closePopupBtn">✖</button>
                 </div>
-            </aside>
+            </div>
+            <div class="live-popup-disclaimer">
+                ⚠️ "Forming" patterns are structurally complete but have not yet triggered a breakout. They may fail.
+            </div>
+            <div class="live-popup-list" id="livePopupList">
+                <div class="empty-state">
+                    <div class="icon">🔔</div>
+                    <div class="text">Enable Live Alerts and run a live scan to see results here.</div>
+                </div>
+            </div>
         </div>
     </div>
 

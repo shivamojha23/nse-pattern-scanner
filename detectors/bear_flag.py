@@ -135,7 +135,6 @@ def detect_bear_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 pattern["flag_end_date"]    = str(dates[flag_end])
                 
             valid_structures.append(pattern)
-            break
 
     # Evaluate breakdowns on all valid structures
     for pat in valid_structures:

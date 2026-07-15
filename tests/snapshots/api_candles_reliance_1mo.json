@@ -174,10 +174,18 @@
       "low": 1286.9,
       "open": 1290.0,
       "time": "2026-07-14",
-      "volume": 13510546
+      "volume": 13511284
+    },
+    {
+      "close": 1295.5,
+      "high": 1310.9,
+      "low": 1294.1,
+      "open": 1294.1,
+      "time": "2026-07-15",
+      "volume": 9577497
     }
   ],
-  "count": 22,
+  "count": 23,
   "interval": "1d",
   "lookback": "1mo",
   "ticker": "RELIANCE.NS"

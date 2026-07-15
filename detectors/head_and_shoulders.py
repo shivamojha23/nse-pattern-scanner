@@ -5,7 +5,7 @@ import datetime
 import os
 import sys
 from scipy.signal import find_peaks
-from scipy.stats import linregress
+
 from .core import *
 
 def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN",
@@ -188,6 +188,8 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
 
                 valid_structures.append(pattern)
 
+    forming_candidates = {}
+
     # Evaluate breakdowns on all valid structures
     for pat in valid_structures:
         rs_idx = pat["right_shoulder_idx"]
@@ -202,11 +204,15 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
                 breakdown_idx = k
                 break
 
+        is_forming = False
         if breakdown_idx is None:
-            continue
+            if rs_idx >= n - 30:
+                is_forming = True
+            else:
+                continue
 
         vol_breakdown_pass = None
-        if volumes is not None:
+        if volumes is not None and breakdown_idx is not None:
             vol_sma50 = pat.get("vol_sma50", 0)
             if vol_sma50 > 0:
                 bd_vol = float(volumes[breakdown_idx])
@@ -221,16 +227,33 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
         })
 
         pat = pat.copy()
-        pat["breakdown_idx"] = breakdown_idx
-        pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2)
-        pat["vol_breakdown_pass"] = vol_breakdown_pass
+        pat["status"] = "forming" if is_forming else "confirmed"
+        pat["vol_breakdown_pass"] = vol_breakdown_pass if not is_forming else None
         pat["quality_score"] = quality
 
-        if dates is not None:
-            pat["signal_date"] = str(dates[breakdown_idx])
-            pat["breakdown_date"] = str(dates[breakdown_idx])
-            
-        patterns_found.append(pat)
+        if is_forming:
+            pat["breakdown_idx"] = None
+            pat["breakdown_price"] = None
+            if dates is not None:
+                pat["signal_date"] = None
+                pat["breakdown_date"] = None
+                
+            head_key = pat["head_idx"]
+            if head_key not in forming_candidates or pat["right_shoulder_idx"] > forming_candidates[head_key]["right_shoulder_idx"]:
+                forming_candidates[head_key] = pat
+        else:
+            pat["breakdown_idx"] = breakdown_idx
+            pat["breakdown_price"] = round(float(prices[breakdown_idx]), 2)
+            if dates is not None:
+                pat["signal_date"] = str(dates[breakdown_idx])
+                pat["breakdown_date"] = str(dates[breakdown_idx])
+                
+            patterns_found.append(pat)
+
+    confirmed_heads = {p["head_idx"] for p in patterns_found}
+    for fpat in forming_candidates.values():
+        if fpat["head_idx"] not in confirmed_heads:
+            patterns_found.append(fpat)
 
     # Deduplication
     patterns_found.sort(key=lambda p: (p["head_price"], p["quality_score"]), reverse=True)

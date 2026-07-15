@@ -137,6 +137,8 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             valid_structures.append(pattern)
 
     # Now evaluate breakouts on all valid structures
+    forming_candidates = {}
+    
     for pat in valid_structures:
         flag_end = pat["flag_end_idx"]
         pole_top_price = pat["pole_top_price"]
@@ -146,11 +148,16 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 breakout_idx = k
                 break
 
+        is_forming = False
         if breakout_idx is None:
-            if verbose:
-                print(f"  ❌ {ticker}: Bull Flag pole found (idx {pat['pole_start_idx']}-"
-                      f"{pat['pole_end_idx']}, +{pat['pole_rise_pct']:.1f}%) but no breakout.")
-            continue
+            # It's a forming pattern only if it's currently active at the right edge
+            if flag_end >= n - 6:
+                is_forming = True
+            else:
+                if verbose:
+                    print(f"  ❌ {ticker}: Bull Flag pole found (idx {pat['pole_start_idx']}-"
+                          f"{pat['pole_end_idx']}, +{pat['pole_rise_pct']:.1f}%) but no breakout and flag expired.")
+                continue
             
         vol_sma50 = 0
         vol_pole_pass = None
@@ -170,10 +177,11 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 flag_vol = float(np.mean(volumes[pat["pole_end_idx"] + 1:pat["flag_end_idx"] + 1]))
                 vol_flag_pass = flag_vol < vol_sma50
 
-                breakout_vol = float(volumes[breakout_idx])
-                vol_breakout_pass = breakout_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
+                if not is_forming:
+                    breakout_vol = float(volumes[breakout_idx])
+                    vol_breakout_pass = breakout_vol > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-        if REQUIRE_BREAKOUT_VOLUME and vol_breakout_pass is False:
+        if not is_forming and REQUIRE_BREAKOUT_VOLUME and vol_breakout_pass is False:
             continue
             
         quality = compute_quality_score("bull_flag", {
@@ -186,17 +194,33 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
         })
         
         pat = pat.copy()
-        pat["breakout_idx"] = breakout_idx
-        pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+        pat["status"] = "forming" if is_forming else "confirmed"
         pat["vol_pole_pass"] = vol_pole_pass
         pat["vol_flag_pass"] = vol_flag_pass
         pat["vol_breakout_pass"] = vol_breakout_pass
         pat["quality_score"] = quality
         
-        if dates is not None:
-            pat["signal_date"] = str(dates[breakout_idx])
-            
-        patterns_found.append(pat)
+        if is_forming:
+            pat["breakout_idx"] = None
+            pat["breakout_price"] = None
+            if dates is not None:
+                pat["signal_date"] = None
+                
+            pole_key = pat["pole_start_idx"]
+            if pole_key not in forming_candidates or pat["flag_end_idx"] > forming_candidates[pole_key]["flag_end_idx"]:
+                forming_candidates[pole_key] = pat
+        else:
+            pat["breakout_idx"] = breakout_idx
+            pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+            if dates is not None:
+                pat["signal_date"] = str(dates[breakout_idx])
+            patterns_found.append(pat)
+
+    # Add the single best forming pattern per pole
+    confirmed_poles = {p["pole_start_idx"] for p in patterns_found}
+    for fpat in forming_candidates.values():
+        if fpat["pole_start_idx"] not in confirmed_poles:
+            patterns_found.append(fpat)
 
     patterns_found.sort(key=lambda p: p.get("quality_score", 0), reverse=True)
     return patterns_found

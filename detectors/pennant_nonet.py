@@ -82,7 +82,7 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             dist_start = res_high.intercept - res_low.intercept
             dist_end = (res_high.intercept + upper_slope * len(x)) - (res_low.intercept + lower_slope * len(x))
             
-            if dist_end >= dist_start or dist_end <= 0:
+            if dist_end >= dist_start:
                 continue
                 
             vol_pennant_pass = False
@@ -132,8 +132,7 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 pattern["pennant_end_date"]   = str(dates[pennant_end])
                 
             valid_structures.append(pattern)
-
-    forming_candidates = {}
+            break 
 
     # Evaluate breakouts on all valid structures
     for pat in valid_structures:
@@ -175,12 +174,8 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                     vol_breakout_pass = True
                     break
 
-        is_forming = False
         if breakout_idx is None:
-            if pennant_end >= n - 6:
-                is_forming = True
-            else:
-                continue
+            continue
             
         quality = compute_quality_score("pennant", {
             "pole_change_pct": pat["pole_change_pct"],
@@ -188,37 +183,20 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             "r_squared": pat["r_squared"],
             "vol_pole_pass": True,
             "vol_pennant_pass": pat["vol_pennant_pass"],
-            "vol_breakout_pass": vol_breakout_pass if not is_forming else None,
+            "vol_breakout_pass": vol_breakout_pass,
         })
         
         pat = pat.copy()
-        pat["status"] = "forming" if is_forming else "confirmed"
-        pat["vol_breakout_pass"] = vol_breakout_pass if not is_forming else None
+        pat["breakout_idx"] = breakout_idx
+        pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
+        pat["vol_breakout_pass"] = vol_breakout_pass
         pat["quality_score"] = quality
         
-        if is_forming:
-            pat["breakout_idx"] = None
-            pat["breakout_price"] = None
-            if dates is not None:
-                pat["signal_date"] = None
-                pat["breakout_date"] = None
-                
-            pole_key = pat["pole_start_idx"]
-            if pole_key not in forming_candidates or pat["pennant_end_idx"] > forming_candidates[pole_key]["pennant_end_idx"]:
-                forming_candidates[pole_key] = pat
-        else:
-            pat["breakout_idx"] = breakout_idx
-            pat["breakout_price"] = round(float(prices[breakout_idx]), 2)
-            if dates is not None:
-                pat["signal_date"] = str(dates[breakout_idx])
-                pat["breakout_date"] = str(dates[breakout_idx])
-                
-            patterns_found.append(pat)
-
-    confirmed_poles = {p["pole_start_idx"] for p in patterns_found}
-    for fpat in forming_candidates.values():
-        if fpat["pole_start_idx"] not in confirmed_poles:
-            patterns_found.append(fpat)
+        if dates is not None:
+            pat["signal_date"] = str(dates[breakout_idx])
+            pat["breakout_date"] = str(dates[breakout_idx])
+            
+        patterns_found.append(pat)
 
     # Deduplication
     patterns_found.sort(key=lambda p: p["quality_score"], reverse=True)
@@ -227,20 +205,12 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
 
     for c in patterns_found:
         is_dup = False
-        if c.get("status") == "forming":
-            # Bypassing breakout checks for forming overlaps
-            for (cs, ce) in claimed:
-                if abs(c["pole_start_idx"] - cs) <= 10:
-                    is_dup = True
-                    break
-        else:
-            for (cs, ce) in claimed:
-                if ce is not None and abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakout_idx"] - ce) <= 10:
-                    is_dup = True
-                    break
-        
+        for (cs, ce) in claimed:
+            if abs(c["pole_start_idx"] - cs) <= 10 and abs(c["breakout_idx"] - ce) <= 10:
+                is_dup = True
+                break
         if not is_dup:
             final_patterns.append(c)
-            claimed.append((c["pole_start_idx"], c.get("breakout_idx")))
+            claimed.append((c["pole_start_idx"], c["breakout_idx"]))
 
     return final_patterns

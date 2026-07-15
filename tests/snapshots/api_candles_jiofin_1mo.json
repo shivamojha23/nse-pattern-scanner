@@ -174,10 +174,18 @@
       "low": 235.2,
       "open": 239.7,
       "time": "2026-07-14",
-      "volume": 10004080
+      "volume": 10014430
+    },
+    {
+      "close": 236.59,
+      "high": 238.5,
+      "low": 235.35,
+      "open": 237.2,
+      "time": "2026-07-15",
+      "volume": 9699480
     }
   ],
-  "count": 22,
+  "count": 23,
   "interval": "1d",
   "lookback": "1mo",
   "ticker": "JIOFIN.NS"
