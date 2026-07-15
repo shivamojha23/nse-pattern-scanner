@@ -268,15 +268,22 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
         elif not breakout_confirmed:
             # ── FORMING STATE (Track A) ──
             # Cup geometry is valid + handle exists, but breakout not yet confirmed.
-            # Skip post-breakout checks (pause, slope, handle depth/duration, cup:handle ratio)
-            # — they only apply after breakout. Rim stability still checked below.
-            rim_window_start = max(0, right_rim_idx - 2)
-            rim_window_end = min(len(prices), right_rim_idx + 3)
-            rim_window_prices = prices[rim_window_start:rim_window_end]
-            if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
+            # Of the 5 post-breakout checks, only handle_pullback depth is also a
+            # structural-validity constraint (values fully available for forming).
+            # The other 4 (pause_duration, handle_slope, handle_duration, cup:handle
+            # ratio) depend on breakout timing or incomplete handle data — skip those.
+            if handle_pullback > max_handle_dip:
                 is_valid = False
-                reject_reason = "Right rim is too spiky (failed stability check)."
-            # If rim is stable, this is a valid forming pattern — is_valid stays True
+                reject_reason = (f"Handle pullback (₹{handle_pullback:.2f}) "
+                                 f"exceeded 0.32× depth (₹{max_handle_dip:.2f}).")
+            else:
+                rim_window_start = max(0, right_rim_idx - 2)
+                rim_window_end = min(len(prices), right_rim_idx + 3)
+                rim_window_prices = prices[rim_window_start:rim_window_end]
+                if np.mean(rim_window_prices) < right_rim_price * (1 - RIGHT_RIM_STABILITY_PCT / 100):
+                    is_valid = False
+                    reject_reason = "Right rim is too spiky (failed stability check)."
+            # If both pass, this is a valid forming pattern — is_valid stays True
         elif pause_duration < MIN_PAUSE_CANDLES:
             is_valid = False
             reject_reason = (f"No real handle — immediate continuation "
