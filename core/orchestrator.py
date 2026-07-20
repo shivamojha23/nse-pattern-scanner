@@ -609,7 +609,7 @@ def _process_alert_history(ticker, df, ptype, patterns):
 
 
 def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
-                   end=None, interval="15m"):
+                   end=None, interval="15m", return_scanned_tickers=False):
     """
     One-shot live scan: downloads latest data, runs detection,
     filters for patterns completing TODAY with deduplication.
@@ -632,6 +632,8 @@ def scan_watchlist(tickers, patterns_to_scan, period=None, start=None,
             if new_alert:
                 new_alerts.append(new_alert)
 
+    if return_scanned_tickers:
+        return new_alerts, list(all_data.keys())
     return new_alerts
 
 

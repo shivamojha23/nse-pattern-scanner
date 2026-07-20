@@ -90,10 +90,18 @@
                         <input type="text" id="intervalSelect" list="intervalOptions" value="1d"
                             placeholder="e.g. 15m, 1h, 1d...">
                         <datalist id="intervalOptions">
+                            <option value="1m">1 Minute</option>
+                            <option value="2m">2 Minutes</option>
+                            <option value="5m">5 Minutes</option>
                             <option value="15m">15 Minutes</option>
-                            <option value="1h">1 Hour</option>
+                            <option value="30m">30 Minutes</option>
+                            <option value="60m">1 Hour</option>
+                            <option value="90m">90 Minutes</option>
                             <option value="1d">1 Day</option>
+                            <option value="5d">5 Days</option>
                             <option value="1wk">1 Week</option>
+                            <option value="1mo">1 Month</option>
+                            <option value="3mo">3 Months</option>
                         </datalist>
                     </div>
                     <div class="control-group">
@@ -117,6 +125,15 @@
                             <span class="slider round"></span>
                         </label>
                     </div>
+
+                    <div class="control-group" id="liveScanControls" style="display: flex; gap: 8px; margin-top: 8px;">
+                        <div style="flex: 1;">
+                            <input type="text" id="liveIntervalSelect" class="form-control" list="intervalOptions" value="1d" style="width: 100%; padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);" title="Live Scan Interval" placeholder="e.g. 15m, 1h, 1d">
+                        </div>
+                        <div style="flex: 1;">
+                            <input type="text" id="liveLookbackSelect" class="form-control" list="lookbackOptions" value="3mo" style="width: 100%; padding: 6px; font-size: 12px; border-radius: 4px; border: 1px solid var(--border-color); background: var(--bg-primary); color: var(--text-primary);" title="Live Scan Lookback" placeholder="e.g. 1mo, 1y">
+                        </div>
+                    </div>
                 </div>
 
                 <div class="scan-btn-container">
@@ -133,6 +150,7 @@
                 <div class="sort-control">
                     <select id="sortSelect">
                         <option value="score">Sort: Quality Score ↓</option>
+                        <option value="date">Sort: Most Recent</option>
                         <option value="alpha">Sort: A → Z</option>
                         <option value="pattern">Sort: Pattern Type</option>
                     </select>

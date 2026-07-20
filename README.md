@@ -72,9 +72,9 @@ You can run the suite either as a Command Line Interface (CLI) tool or as a Web 
 ### Option A: Interactive Web UI (Highly Recommended)
 Launch the FastAPI web server to run scans, view watchlists, and see interactive charts:
 ```bash
-python -m uvicorn backend.main:app --reload --port 8001
+python -m uvicorn backend.main:app --reload --port 8000
 ```
-Open **`http://localhost:8001`** in your web browser. 
+Open **`http://localhost:8000`** in your web browser. 
 
 * *Features:* Interactive list of Nifty tickers, instant scanner configurations, custom lookbacks/intervals, and interactive TradingView charts showing exact pattern markers.
 

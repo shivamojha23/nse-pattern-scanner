@@ -532,12 +532,13 @@ async def api_live_scan(
     validated_lookback = validate_yfinance_params(interval, lookback)
 
     # Run scan_watchlist using asyncio.to_thread
-    new_alerts = await asyncio.to_thread(
+    new_alerts, scanned_tickers = await asyncio.to_thread(
         scan_watchlist,
         tickers=tickers_to_scan,
         patterns_to_scan=patterns_to_scan,
         period=validated_lookback,
-        interval=interval
+        interval=interval,
+        return_scanned_tickers=True
     )
     
     # Connect to DB to deduplicate and persist
@@ -547,6 +548,31 @@ async def api_live_scan(
         cursor = conn.cursor()
         
         now_str = datetime.datetime.now().isoformat()
+        
+        # Build new alert ids for sync cleanup
+        new_alert_ids = set()
+        for pat in new_alerts:
+            pt_type = pat.get("pattern_type", "")
+            tkr = pat.get("ticker", "UNKNOWN")
+            s_date = pat.get("signal_date", pat.get("breakout_date", pat.get("breakdown_date", "")))
+            stat = _extract_pattern_status(pat)
+            aid = f"{tkr}_{pt_type}_{interval}_{s_date}"
+            if stat == "forming":
+                aid += "_FORMING"
+            new_alert_ids.add(aid)
+            
+        # 1. Sync Cleanup for forming alerts (scan-success safeguard)
+        if scanned_tickers:
+            placeholders = ','.join(['?']*len(scanned_tickers))
+            cursor.execute(f"SELECT alert_id FROM live_alerts WHERE alert_id LIKE '%_FORMING' AND ticker IN ({placeholders})", scanned_tickers)
+            for row in cursor.fetchall():
+                if row[0] not in new_alert_ids:
+                    cursor.execute("DELETE FROM live_alerts WHERE alert_id = ?", (row[0],))
+                    
+        # 2. 7-day TTL cleanup for confirmed alerts
+        seven_days_ago = (datetime.datetime.now() - datetime.timedelta(days=7)).isoformat()
+        cursor.execute("DELETE FROM live_alerts WHERE detected_at < ? AND alert_id NOT LIKE '%_FORMING'", (seven_days_ago,))
+
         valid_new_results = []
         for pat in new_alerts:
             ptype = pat.get("pattern_type", "")
@@ -556,7 +582,10 @@ async def api_live_scan(
             if not sig_date:
                 sig_date = pat.get("breakout_date", pat.get("breakdown_date", ""))
                 
+            status = _extract_pattern_status(pat)
             alert_id = f"{ticker}_{ptype}_{interval}_{sig_date}"
+            if status == "forming":
+                alert_id += "_FORMING"
             
             # Check if exists
             cursor.execute("SELECT 1 FROM live_alerts WHERE alert_id = ?", (alert_id,))
@@ -601,15 +630,22 @@ async def api_live_scan(
 
 @app.get("/api/live_alerts", response_model=LiveAlertsResponse)
 async def get_live_alerts():
+    ist = datetime.timezone(datetime.timedelta(hours=5, minutes=30))
+    now_ist = datetime.datetime.now(ist)
+    market_close = now_ist.replace(hour=15, minute=35, second=0, microsecond=0)
+    if now_ist > market_close:
+        return {"alerts": []}
+        
+    today_date_str = now_ist.strftime('%Y-%m-%d')
     from db_cache import CACHE_DB_PATH
     conn = sqlite3.connect(CACHE_DB_PATH, timeout=30.0)
     try:
         cursor = conn.cursor()
         cursor.execute('''
             SELECT pattern_data FROM live_alerts
-            WHERE dismissed = 0
+            WHERE dismissed = 0 AND date(detected_at) = ?
             ORDER BY detected_at DESC
-        ''')
+        ''', (today_date_str,))
         rows = cursor.fetchall()
     finally:
         conn.close()

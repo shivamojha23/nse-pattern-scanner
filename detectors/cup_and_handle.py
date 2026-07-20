@@ -364,6 +364,7 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
                 pattern["signal_date"] = str(dates[breakout_start_idx])
 
         if not is_valid and verbose:
+            from pattern_scanner import print_cup_and_handle
             print_cup_and_handle(pattern, index="REJECTED")
             continue
 

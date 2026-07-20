@@ -35,3 +35,27 @@ verify_*.py
 fix_*.py
 layer4_*.txt
 verification_report.md
+
+# Ignored from cleanup session
+*.sqlite
+*.db-shm
+*.db-wal
+ADD.md-*.svg
+hs_*.json
+pennant_*.json
+verification/
+analyze_*.py
+check_*.py
+find_*.py
+snapshot_*.py
+run_*_scan.py
+temp_*.py
+delete_mocks.py
+manual_test.py
+parity_test.py
+update_snapshots.py
+scan_cup_forming.py
+ADD.md
+
+ENTERPRISE_*.md
+docs/

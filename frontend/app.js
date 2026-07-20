@@ -58,6 +58,8 @@
             intervalSelect: document.getElementById('intervalSelect'),
             lookbackSelect: document.getElementById('lookbackSelect'),
             liveAlertsToggle: document.getElementById('liveAlertsToggle'),
+            liveIntervalSelect: document.getElementById('liveIntervalSelect'),
+            liveLookbackSelect: document.getElementById('liveLookbackSelect'),
             scanBtn: document.getElementById('scanBtn'),
             sortSelect: document.getElementById('sortSelect'),
             resultsList: document.getElementById('resultsList'),
@@ -234,6 +236,12 @@
             const sortBy = els.sortSelect.value;
             if (sortBy === 'score') {
                 results.sort((a, b) => b.quality_score - a.quality_score);
+            } else if (sortBy === 'date') {
+                results.sort((a, b) => {
+                    const dateA = a.raw?.signal_date || a.raw?.breakout_date || a.raw?.breakdown_date || '';
+                    const dateB = b.raw?.signal_date || b.raw?.breakout_date || b.raw?.breakdown_date || '';
+                    return dateB.localeCompare(dateA);
+                });
             } else if (sortBy === 'alpha') {
                 results.sort((a, b) => a.ticker.localeCompare(b.ticker));
             } else if (sortBy === 'pattern') {
@@ -635,6 +643,13 @@
                 return;
             }
 
+            // Sort recent first
+            filtered.sort((a, b) => {
+                const dateA = a.breakout_timestamp || a.detected_at || '';
+                const dateB = b.breakout_timestamp || b.detected_at || '';
+                return dateB.localeCompare(dateA);
+            });
+
             // Group into confirmed and forming sections
             const confirmed = filtered.filter(r => r.status === 'confirmed');
             const forming = filtered.filter(r => r.status === 'forming');
@@ -660,13 +675,21 @@
             const statusLabel = status === 'forming' ? '⏳ Forming' : '✅ Confirmed';
             const statusClass = status === 'forming' ? 'forming' : 'confirmed';
 
+            // Format time
+            const rawTime = result.breakout_timestamp || result.detected_at || '';
+            let timeStr = '';
+            if (rawTime) {
+                const d = new Date(rawTime);
+                timeStr = isNaN(d) ? rawTime.split(' ')[0] : d.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+            }
+
             return `
                 <div class="live-result-item status-${statusClass}"
-                     onclick="selectLiveResult('${result.ticker}', '${result.pattern_type}')">
+                     onclick="selectLiveResult('${result.ticker}', '${result.pattern_type}', '${result.timeframe || ''}')">
                     <div class="result-icon" style="background:${icon.bg}">${icon.emoji}</div>
                     <div class="live-result-info">
-                        <div class="live-result-ticker">${result.ticker.replace('.NS', '')}</div>
-                        <div class="live-result-pattern">${result.pattern}</div>
+                        <div class="live-result-ticker">${result.ticker.replace('.NS', '')} <span style="font-size: 11px; color: var(--text-secondary); margin-left: 6px;">${timeStr}</span></div>
+                        <div class="live-result-pattern">${result.pattern} (${result.timeframe || '1d'})</div>
                     </div>
                     <div class="live-result-meta">
                         <div class="live-result-score">${result.quality_score}</div>
@@ -675,9 +698,15 @@
                 </div>`;
         }
 
-        async function selectLiveResult(ticker, patternType) {
+        async function selectLiveResult(ticker, patternType, timeframe) {
             // Find the result in liveResults
-            const result = liveResults.find(r => r.ticker === ticker && r.pattern_type === patternType);
+            let result;
+            if (timeframe) {
+                result = liveResults.find(r => r.ticker === ticker && r.pattern_type === patternType && r.timeframe === timeframe);
+            }
+            if (!result) {
+                result = liveResults.find(r => r.ticker === ticker && r.pattern_type === patternType);
+            }
             if (!result) return;
 
             selectedResult = result;
@@ -689,7 +718,7 @@
             clearChartState();
 
             // Load candles
-            const interval = els.intervalSelect.value;
+            const interval = result.timeframe || els.intervalSelect.value;
             const lookback = els.lookbackSelect.value;
             const data = await loadCandles(result.ticker, interval, lookback);
 
@@ -709,8 +738,8 @@
             if (!els.liveAlertsToggle.checked) return;
 
             const patterns = els.patternSelect.value;
-            const interval = els.intervalSelect.value;
-            const lookback = els.lookbackSelect.value;
+            const interval = els.liveIntervalSelect ? els.liveIntervalSelect.value : els.intervalSelect.value;
+            const lookback = els.liveLookbackSelect ? els.liveLookbackSelect.value : els.lookbackSelect.value;
 
             try {
                 const response = await fetch(`${API_BASE}/api/live_scan?patterns=${patterns}&interval=${interval}&lookback=${lookback}`);
@@ -743,8 +772,18 @@
             }
         }
 
-        function toggleLiveAlerts() {
+        async function toggleLiveAlerts() {
             if (els.liveAlertsToggle.checked) {
+                try {
+                    const data = await apiGet('/api/market_status');
+                    if (!data.is_open) {
+                        showToast("Market Closed", "Live Scan is only available during market hours (9:15 AM - 3:30 PM IST).", "error");
+                        els.liveAlertsToggle.checked = false;
+                        return;
+                    }
+                } catch (e) {
+                    console.error("Failed to check market status:", e);
+                }
                 showToast("Live Alerts ON", "Scanning for new patterns every minute.");
                 els.liveScanToggle.classList.add('active');
                 els.liveScanToggle.innerHTML = '🟢 Live Scan <span class="live-badge" id="liveAlertsBadge">' + liveResults.length + '</span>';
