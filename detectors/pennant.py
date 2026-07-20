@@ -8,15 +8,10 @@ from scipy.signal import find_peaks
 from scipy.stats import linregress
 from .core import *
 
-def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN", dates=None,
-                   interval="1d", verbose=False):
+def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN", dates=None, interval="1d", verbose=False):
     """
-    Detects Pennant patterns with strict algorithmic constraints.
+    Detects Pennant patterns with strict algorithmic constraints (Advanced Quant Implementation).
     """
-    from scipy.stats import linregress
-    import numpy as np
-    import pandas as pd
-    
     prices = np.array(prices, dtype=float)
     if highs is None: highs = prices
     if lows is None: lows = prices
@@ -31,34 +26,51 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
         return []
 
     patterns_found = []
-        
+    
     vol_sma20 = None
     if volumes is not None:
         vol_series = pd.Series(volumes)
         vol_sma20 = vol_series.rolling(window=20, min_periods=5).mean().values
 
-    
-    # Slow Path: Full Detection
     adx_arr = compute_adx(highs, lows, prices, period=14)
     valid_structures = []
         
-    for pole_end_idx in range(PENNANT_POLE_PERIODS, n - MIN_PENNANT_CANDLES - 1):
-        pole_start_idx = pole_end_idx - PENNANT_POLE_PERIODS
-        change_pct = (prices[pole_end_idx] - prices[pole_start_idx]) / prices[pole_start_idx] * 100
+    # Search for pole ends
+    for pole_end_idx in range(20, n - MIN_PENNANT_CANDLES - 1):
+        # Dynamic pole lookback (5 to 20 candles)
+        best_pole_start = None
+        best_change_pct = 0
+        best_pole_dir = None
         
-        is_bullish = change_pct >= PENNANT_POLE_CHANGE_PCT
-        is_bearish = change_pct <= -PENNANT_POLE_CHANGE_PCT
-        
-        if not is_bullish and not is_bearish:
+        # Calculate ATR at pole_end for dynamic threshold
+        atr = compute_atr(highs[:pole_end_idx+1], lows[:pole_end_idx+1], prices[:pole_end_idx+1], period=14)
+        atr_threshold = max(PENNANT_POLE_CHANGE_PCT, (3 * atr / prices[pole_end_idx]) * 100) if atr > 0 else PENNANT_POLE_CHANGE_PCT
+
+        for lookback in range(5, 21): 
+            pole_start_idx = pole_end_idx - lookback
+            change_pct = (prices[pole_end_idx] - prices[pole_start_idx]) / prices[pole_start_idx] * 100
+            
+            if abs(change_pct) >= atr_threshold:
+                if abs(change_pct) > abs(best_change_pct):
+                    best_change_pct = change_pct
+                    best_pole_start = pole_start_idx
+                    best_pole_dir = "bullish" if change_pct > 0 else "bearish"
+                    
+        if best_pole_start is None:
             continue
             
+        pole_start_idx = best_pole_start
+        pole_direction = best_pole_dir
+        change_pct = best_change_pct
+        pole_len = pole_end_idx - pole_start_idx
+        
         pole_adx = adx_arr[pole_end_idx]
         if np.isnan(pole_adx) or pole_adx <= PENNANT_ADX_THRESHOLD:
             continue
             
-        pole_direction = "bullish" if is_bullish else "bearish"
-        
         max_pennant_len = min(MAX_PENNANT_CANDLES, n - pole_end_idx - 2)
+        # Apply proportionality rule: pennant length <= 1.5 * pole_len
+        max_pennant_len = min(max_pennant_len, int(1.5 * pole_len))
         if max_pennant_len < MIN_PENNANT_CANDLES:
             continue
             
@@ -79,16 +91,26 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             if upper_slope >= 0 or lower_slope <= 0:
                 continue
                 
-            dist_start = res_high.intercept - res_low.intercept
-            dist_end = (res_high.intercept + upper_slope * len(x)) - (res_low.intercept + lower_slope * len(x))
+            # Shift trendlines to create true bounding boxes touching max wicks
+            upper_line_vals = res_high.intercept + upper_slope * x
+            max_pos_residual = np.max(pennant_highs - upper_line_vals)
+            shifted_upper_intercept = res_high.intercept + max_pos_residual
             
-            if dist_end >= dist_start or dist_end <= 0:
+            lower_line_vals = res_low.intercept + lower_slope * x
+            max_neg_residual = np.min(pennant_lows - lower_line_vals)
+            shifted_lower_intercept = res_low.intercept + max_neg_residual
+            
+            # Strict Symmetry Check (40% max diff to start slightly loose)
+            slope_diff = abs(abs(upper_slope) - abs(lower_slope)) / max(abs(upper_slope), abs(lower_slope))
+            if slope_diff > 0.40: 
                 continue
                 
             vol_pennant_pass = False
+            vol_slope = 0.0
             if volumes is not None and vol_sma20 is not None:
                 pennant_vols = volumes[pennant_start:pennant_end + 1]
                 res_vol = linregress(x, pennant_vols)
+                vol_slope = res_vol.slope
                 avg_pennant_vol = np.mean(pennant_vols)
                 sma20_at_end = vol_sma20[pennant_end]
                 
@@ -96,9 +118,6 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                     vol_pennant_pass = True
             else:
                 vol_pennant_pass = True 
-                
-            if not vol_pennant_pass:
-                continue
                 
             pattern = {
                 "pattern_type":       "pennant",
@@ -114,15 +133,17 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 "adx_value":          round(float(pole_adx), 2),
                 "upper_slope":        float(upper_slope),
                 "lower_slope":        float(lower_slope),
-                "res_high_intercept": float(res_high.intercept),
-                "res_low_intercept":  float(res_low.intercept),
-                "convergence_ratio":  round(float(dist_end / dist_start if dist_start > 0 else 1.0), 3),
+                "res_high_intercept": float(shifted_upper_intercept),
+                "res_low_intercept":  float(shifted_lower_intercept),
+                "symmetry_diff":      round(float(slope_diff), 3),
+                "vol_slope":          float(vol_slope),
                 "r_squared":          round(float(res_high.rvalue**2), 3),
                 "vol_pennant_pass":   vol_pennant_pass,
                 "pole_start_idx":     pole_start_idx,
                 "pole_end_idx":       pole_end_idx,
                 "pennant_start_idx":  pennant_start,
                 "pennant_end_idx":    pennant_end,
+                "pole_len":           pole_len,
             }
 
             if dates is not None:
@@ -135,57 +156,70 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
 
     forming_candidates = {}
 
-    # Evaluate breakouts on all valid structures
+    # Evaluate breakouts and apex on all valid structures
     for pat in valid_structures:
         pennant_end = pat["pennant_end_idx"]
         pennant_start = pat["pennant_start_idx"]
         pole_direction = pat["direction"]
-        res_high_intercept = pat["res_high_intercept"]
-        res_low_intercept = pat["res_low_intercept"]
+        upper_intercept = pat["res_high_intercept"]
+        lower_intercept = pat["res_low_intercept"]
         upper_slope = pat["upper_slope"]
         lower_slope = pat["lower_slope"]
 
+        # Calculate Apex (Intersection of trendlines)
+        x_apex = (lower_intercept - upper_intercept) / (upper_slope - lower_slope) if upper_slope != lower_slope else 9999
+
         breakout_idx = None
         vol_breakout_pass = False
+        apex_ratio = 0.0
 
         for k in range(pennant_end + 1, min(n, pennant_end + 6)):
             rel_k = k - pennant_start
-            upper_tl_val = res_high_intercept + upper_slope * rel_k
-            lower_tl_val = res_low_intercept + lower_slope * rel_k
+            upper_tl_val = upper_intercept + upper_slope * rel_k
+            lower_tl_val = lower_intercept + lower_slope * rel_k
             
+            is_breakout = False
             if pole_direction == "bullish" and prices[k] > upper_tl_val:
-                if volumes is not None and vol_sma20 is not None:
-                    if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
-                        breakout_idx = k
-                        vol_breakout_pass = True
-                        break
-                else:
-                    breakout_idx = k
-                    vol_breakout_pass = True
-                    break
-                    
+                is_breakout = True
             elif pole_direction == "bearish" and prices[k] < lower_tl_val:
+                is_breakout = True
+                
+            if is_breakout:
+                breakout_idx = k
+                apex_ratio = rel_k / x_apex if x_apex > 0 else 0
+                
+                # Check volume breakout - price breakout is valid regardless
                 if volumes is not None and vol_sma20 is not None:
                     if volumes[k] > PENNANT_BREAKOUT_VOL_MULT * vol_sma20[k-1]:
-                        breakout_idx = k
                         vol_breakout_pass = True
-                        break
                 else:
-                    breakout_idx = k
                     vol_breakout_pass = True
-                    break
-
+                break
+                
         is_forming = False
         if breakout_idx is None:
             if pennant_end >= n - 6:
-                is_forming = True
+                # Reject forming if it's already exhausted into the apex
+                current_rel_k = n - 1 - pennant_start
+                current_apex_ratio = current_rel_k / x_apex if x_apex > 0 else 0
+                if current_apex_ratio <= 0.85:
+                    is_forming = True
+                else:
+                    continue
             else:
                 continue
-            
+
+        # Check Apex Trap: Breakout should be between 40% and 85% of apex distance
+        if breakout_idx is not None:
+            if apex_ratio < 0.40 or apex_ratio > 0.85:
+                continue 
+
+        pat["apex_ratio"] = round(float(apex_ratio), 3)
+
         quality = compute_quality_score("pennant", {
             "pole_change_pct": pat["pole_change_pct"],
-            "convergence_ratio": pat["convergence_ratio"],
-            "r_squared": pat["r_squared"],
+            "symmetry_diff": pat["symmetry_diff"],
+            "vol_slope": pat["vol_slope"],
             "vol_pole_pass": True,
             "vol_pennant_pass": pat["vol_pennant_pass"],
             "vol_breakout_pass": vol_breakout_pass if not is_forming else None,
@@ -204,7 +238,7 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 pat["breakout_date"] = None
                 
             pole_key = pat["pole_start_idx"]
-            if pole_key not in forming_candidates or pat["pennant_end_idx"] > forming_candidates[pole_key]["pennant_end_idx"]:
+            if pole_key not in forming_candidates or pat["quality_score"] > forming_candidates[pole_key]["quality_score"]:
                 forming_candidates[pole_key] = pat
         else:
             pat["breakout_idx"] = breakout_idx
@@ -228,7 +262,6 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
     for c in patterns_found:
         is_dup = False
         if c.get("status") == "forming":
-            # Bypassing breakout checks for forming overlaps
             for (cs, ce) in claimed:
                 if abs(c["pole_start_idx"] - cs) <= 10:
                     is_dup = True
