@@ -187,6 +187,10 @@ def compute_quality_score(pattern_type, metrics):
         # Neckline flatness (0–2): 0% slope → 2, 8% → 0
         neck_slope = abs(metrics.get("neckline_slope_pct", 0))
         neck_score = max(0, 2.0 * (1 - neck_slope / 8))
+        
+        # Downward slope bonus: +1 point if right trough is lower than left trough
+        if metrics.get("right_trough_lower"):
+            neck_score += 1.0
         # Volume (0–3)
         vol_score = 0
         if metrics.get("vol_progression_pass"):

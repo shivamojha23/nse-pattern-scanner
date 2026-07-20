@@ -224,6 +224,7 @@ def detect_head_and_shoulders(prices, highs=None, lows=None, volumes=None, ticke
             "neckline_slope_pct": pat["neckline_slope_pct"],
             "vol_progression_pass": pat["vol_progression_pass"],
             "vol_breakdown_pass": vol_breakdown_pass,
+            "right_trough_lower": pat["right_neckline_price"] < pat["left_neckline_price"],
         })
 
         pat = pat.copy()
