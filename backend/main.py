@@ -358,7 +358,7 @@ async def run_scan(
                 -m.get("quality_score", 0.0),
                 m.get("ticker", ""),
                 m.get("pattern_type", ""),
-                m.get("raw", {}).get("signal_date", "")
+                (m.get("raw", {}).get("signal_date") or "")
             )
         )
 

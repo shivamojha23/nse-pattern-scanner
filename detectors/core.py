@@ -162,20 +162,16 @@ def compute_quality_score(pattern_type, metrics):
         # Pole strength (0–3)
         pole_pct = abs(metrics.get("pole_change_pct", 0))
         pole_score = min(3.0, max(0, (pole_pct - 8) / 4))
-        # Convergence quality (0–2): ratio of second-half range / first-half range
-        conv_ratio = metrics.get("convergence_ratio", 1.0)
-        conv_score = min(2.0, max(0, (1 - conv_ratio) * 4))
-        # R² (0–2)
-        r2_score = min(2.0, max(0, (metrics.get("r_squared", 0.8) - 0.8) * 10))
-        # Volume (0–3)
+        # Symmetry quality (0–3): 0% diff → 3, 40% diff → 0
+        sym_diff = metrics.get("symmetry_diff", 0.40)
+        sym_score = max(0, 3.0 * (1 - sym_diff / 0.40))
+        # Volume breakdown (0-4)
         vol_score = 0
-        if metrics.get("vol_pole_pass"):
-            vol_score += 1
-        if metrics.get("vol_pennant_pass"):
-            vol_score += 1
-        if metrics.get("vol_breakout_pass"):
-            vol_score += 1
-        return round(min(10.0, max(0, pole_score + conv_score + r2_score + vol_score)), 1)
+        if metrics.get("vol_pole_pass"): vol_score += 1
+        if metrics.get("vol_pennant_pass"): vol_score += 1
+        if metrics.get("vol_slope", 0) < 0: vol_score += 1
+        if metrics.get("vol_breakout_pass"): vol_score += 1
+        return round(min(10.0, max(0, pole_score + sym_score + vol_score)), 1)
 
     elif pattern_type == "head_and_shoulders":
         # Head prominence (0–3): 3% → 1, 9% → 3
@@ -187,6 +183,10 @@ def compute_quality_score(pattern_type, metrics):
         # Neckline flatness (0–2): 0% slope → 2, 8% → 0
         neck_slope = abs(metrics.get("neckline_slope_pct", 0))
         neck_score = max(0, 2.0 * (1 - neck_slope / 8))
+        
+        # Downward slope bonus: +1 point if right trough is lower than left trough
+        if metrics.get("right_trough_lower"):
+            neck_score += 1.0
         # Volume (0–3)
         vol_score = 0
         if metrics.get("vol_progression_pass"):
