@@ -96,12 +96,29 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             # Bullish: pennant highs must stay within 1% of the pole peak.
             # Bearish: pennant lows must stay within 1% of the pole trough.
             pole_end_price = prices[pole_end_idx]
+            pole_start_price = prices[pole_start_idx]
+            
             if pole_direction == "bullish":
                 if np.max(pennant_highs) > pole_end_price * 1.01:
+                    continue
+                # Retracement check: Pennant shouldn't drop more than 45% of the pole
+                pole_height = pole_end_price - pole_start_price
+                retracement = (pole_end_price - np.min(pennant_lows)) / pole_height if pole_height > 0 else 1
+                if retracement > 0.45:
                     continue
             else:  # bearish
                 if np.min(pennant_lows) < pole_end_price * 0.99:
                     continue
+                pole_drop = pole_start_price - pole_end_price
+                retracement = (np.max(pennant_highs) - pole_end_price) / pole_drop if pole_drop > 0 else 1
+                if retracement > 0.45:
+                    continue
+                    
+            # ── Proportion Check (Anti-Spike) ──
+            # Pennant should be at least a quarter of the pole's duration to be visually proportional.
+            pennant_len = pennant_end - pennant_start
+            if pennant_len < pole_len * 0.25:
+                continue
                 
             # Shift trendlines to create true bounding boxes touching max wicks
             upper_line_vals = res_high.intercept + upper_slope * x
