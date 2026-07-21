@@ -27,6 +27,16 @@ class KeyLevel(BaseModel):
     date: str
     color: str
 
+class Point(BaseModel):
+    time: str
+    value: float
+
+class LineSegment(BaseModel):
+    points: List[Point]
+    color: str
+    lineWidth: int = 2
+    lineStyle: int = 0
+
 class PatternCheck(BaseModel):
     name: str
     status: str
@@ -40,6 +50,7 @@ class ScanMatch(BaseModel):
     status: str = "confirmed"
     quality_score: float
     key_levels: List[KeyLevel]
+    line_segments: List[LineSegment] = []
     checks: List[PatternCheck]
     raw: Dict[str, Any]
 
@@ -82,6 +93,7 @@ class LiveAlertItem(BaseModel):
     verdict: str
     quality_score: float
     key_levels: List[KeyLevel]
+    line_segments: List[LineSegment] = []
     checks: List[PatternCheck]
     raw: Dict[str, Any]
     detected_at: str
@@ -243,6 +255,123 @@ def _extract_pattern_key_levels(pattern_dict):
 
     # Filter out markers with missing data
     return [m for m in markers if m.get("price") is not None and m.get("date") is not None]
+
+
+def _extract_line_segments(pattern_dict):
+    ptype = pattern_dict.get("pattern_type", "")
+    segments = []
+
+    if ptype == "pennant":
+        # The Pole
+        if pattern_dict.get("pole_start_date") and pattern_dict.get("pole_end_date"):
+            segments.append({
+                "points": [
+                    {"time": _format_date(pattern_dict["pole_start_date"]), "value": pattern_dict["pole_start_price"]},
+                    {"time": _format_date(pattern_dict["pole_end_date"]), "value": pattern_dict["pole_end_price"]}
+                ],
+                "color": "#2196F3", "lineWidth": 2, "lineStyle": 0
+            })
+        
+        # Upper and Lower Trendlines
+        p_start_date = pattern_dict.get("pennant_start_date")
+        p_end_date = pattern_dict.get("pennant_end_date")
+        # We need the prices at start and end for both lines.
+        # res_high_intercept is the price at x=0 (which is pennant_start).
+        start_idx = pattern_dict.get("pennant_start_idx")
+        end_idx = pattern_dict.get("pennant_end_idx")
+        upper_slope = pattern_dict.get("upper_slope")
+        lower_slope = pattern_dict.get("lower_slope")
+        upper_int = pattern_dict.get("res_high_intercept")
+        lower_int = pattern_dict.get("res_low_intercept")
+        
+        if all(v is not None for v in [start_idx, end_idx, upper_slope, lower_slope, upper_int, lower_int, p_start_date, p_end_date]):
+            p_len = end_idx - start_idx
+            
+            segments.append({
+                "points": [
+                    {"time": _format_date(p_start_date), "value": upper_int},
+                    {"time": _format_date(p_end_date), "value": upper_int + upper_slope * p_len}
+                ],
+                "color": "#F44336", "lineWidth": 2, "lineStyle": 2
+            })
+            
+            segments.append({
+                "points": [
+                    {"time": _format_date(p_start_date), "value": lower_int},
+                    {"time": _format_date(p_end_date), "value": lower_int + lower_slope * p_len}
+                ],
+                "color": "#4CAF50", "lineWidth": 2, "lineStyle": 2
+            })
+
+    elif ptype in ("bull_flag", "bear_flag"):
+        # The Pole
+        if pattern_dict.get("pole_start_date") and pattern_dict.get("pole_bottom_date" if ptype == "bear_flag" else "pole_top_date"):
+            segments.append({
+                "points": [
+                    {"time": _format_date(pattern_dict["pole_start_date"]), "value": pattern_dict["pole_start_price"]},
+                    {"time": _format_date(pattern_dict["pole_bottom_date" if ptype == "bear_flag" else "pole_top_date"]), "value": pattern_dict["pole_bottom_price" if ptype == "bear_flag" else "pole_top_price"]}
+                ],
+                "color": "#2196F3", "lineWidth": 2, "lineStyle": 0
+            })
+        
+        f_start_date = pattern_dict.get("flag_start_date")
+        f_end_date = pattern_dict.get("flag_end_date")
+        start_idx = pattern_dict.get("flag_start_idx")
+        end_idx = pattern_dict.get("flag_end_idx")
+        slope = pattern_dict.get("flag_slope")
+        upper_int = pattern_dict.get("flag_upper_intercept")
+        lower_int = pattern_dict.get("flag_lower_intercept")
+
+        if all(v is not None for v in [start_idx, end_idx, slope, upper_int, lower_int, f_start_date, f_end_date]):
+            f_len = end_idx - start_idx
+            
+            segments.append({
+                "points": [
+                    {"time": _format_date(f_start_date), "value": upper_int},
+                    {"time": _format_date(f_end_date), "value": upper_int + slope * f_len}
+                ],
+                "color": "#F44336", "lineWidth": 2, "lineStyle": 2
+            })
+            
+            segments.append({
+                "points": [
+                    {"time": _format_date(f_start_date), "value": lower_int},
+                    {"time": _format_date(f_end_date), "value": lower_int + slope * f_len}
+                ],
+                "color": "#4CAF50", "lineWidth": 2, "lineStyle": 2
+            })
+            
+    elif ptype == "head_and_shoulders":
+        if pattern_dict.get("left_neckline_date") and pattern_dict.get("right_neckline_date"):
+            segments.append({
+                "points": [
+                    {"time": _format_date(pattern_dict["left_neckline_date"]), "value": pattern_dict["left_neckline_price"]},
+                    {"time": _format_date(pattern_dict["right_neckline_date"]), "value": pattern_dict["right_neckline_price"]}
+                ],
+                "color": "#F44336", "lineWidth": 2, "lineStyle": 2
+            })
+
+    elif ptype == "double_top":
+        if pattern_dict.get("first_top_date") and pattern_dict.get("second_top_date"):
+            segments.append({
+                "points": [
+                    {"time": _format_date(pattern_dict["first_top_date"]), "value": pattern_dict["valley_price"]},
+                    {"time": _format_date(pattern_dict["second_top_date"]), "value": pattern_dict["valley_price"]}
+                ],
+                "color": "#F44336", "lineWidth": 2, "lineStyle": 2
+            })
+            
+    elif ptype == "double_bottom":
+        if pattern_dict.get("first_bottom_date") and pattern_dict.get("second_bottom_date"):
+            segments.append({
+                "points": [
+                    {"time": _format_date(pattern_dict["first_bottom_date"]), "value": pattern_dict["peak_price"]},
+                    {"time": _format_date(pattern_dict["second_bottom_date"]), "value": pattern_dict["peak_price"]}
+                ],
+                "color": "#4CAF50", "lineWidth": 2, "lineStyle": 2
+            })
+
+    return segments
 
 
 def _extract_checks(pattern_dict):

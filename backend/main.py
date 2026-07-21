@@ -56,7 +56,7 @@ from backend.cache import ScanCache
 from backend.api_models import (
     HealthResponse, MarketStatusResponse, WatchlistResponse, ScanResponse, 
     CandlesResponse, LiveScanResponse, LiveAlertsResponse, DismissResponse, DismissRequest,
-    _format_date, _make_serializable, _extract_pattern_key_levels, _extract_checks,
+    _format_date, _make_serializable, _extract_pattern_key_levels, _extract_line_segments, _extract_checks,
     _extract_pattern_status
 )
 
@@ -338,6 +338,7 @@ async def run_scan(
                             "status": _extract_pattern_status(pat),
                             "quality_score": pat.get("quality_score", 0),
                             "key_levels": _extract_pattern_key_levels(pat),
+                            "line_segments": _extract_line_segments(pat),
                             "checks": _extract_checks(pat),
                             "raw": _make_serializable(pat),
                         }
@@ -600,12 +601,13 @@ async def api_live_scan(
                 "pattern_type": ptype,
                 "signal": PATTERN_SIGNALS.get(ptype, "NEUTRAL"),
                 "status": _extract_pattern_status(pat),
-                "verdict": pat.get("verdict", "UNKNOWN"),
+                "verdict": pat.get("verdict", "VALID"),
                 "quality_score": pat.get("quality_score", 0),
                 "key_levels": _extract_pattern_key_levels(pat),
+                "line_segments": _extract_line_segments(pat),
                 "checks": _extract_checks(pat),
                 "raw": serializable_pat,
-                "detected_at": now_str,
+                "detected_at": datetime.datetime.now(datetime.timezone.utc).isoformat() + "Z",
                 "breakout_timestamp": sig_date,
                 "timeframe": interval
             }

@@ -49,7 +49,9 @@ import argparse
 import math
 from scipy.signal import find_peaks
 
-ALGO_VERSION = "3.0"
+# Increment this version whenever you change core pattern logic or UI payload structure
+# so that the old cache is invalidated.
+ALGO_VERSION = "3.2"
 
 # Fix Windows console encoding so emoji and special characters display correctly.
 if sys.platform == "win32":

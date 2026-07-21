@@ -108,6 +108,11 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if flag_total_drift_pct > 0.5:
                 continue
 
+            # Calculate upper and lower bounds for the channel based on residuals
+            line_vals = flag_res.intercept + flag_res.slope * x
+            upper_intercept = flag_res.intercept + np.max(flag_prices - line_vals)
+            lower_intercept = flag_res.intercept + np.min(flag_prices - line_vals)
+
             pattern = {
                 "pattern_type":       "bull_flag",
                 "ticker":             ticker,
@@ -126,6 +131,8 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 "flag_start_idx":     flag_start,
                 "flag_end_idx":       flag_end,
                 "retracement_pct":    round(float(retracement_pct), 2),
+                "flag_upper_intercept": float(upper_intercept),
+                "flag_lower_intercept": float(lower_intercept),
             }
 
             if dates is not None:

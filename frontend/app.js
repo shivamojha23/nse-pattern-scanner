@@ -36,6 +36,7 @@
         let candleSeries = null;    // Candlestick series
         let volumeSeries = null;    // Volume histogram series
         let priceLines = [];        // Current price level lines on chart
+        let patternLineSeries = []; // Slanted trendlines on chart
         let isDarkMode = true;      // Theme state
         let liveResults = [];       // Live scan results (separate from backtest)
         let livePopupOpen = false;  // Whether the popup is visible
@@ -361,14 +362,20 @@
             els.chartOverlay.style.display = 'none';
         }
 
-        function addPatternMarkers(keyLevels, candlesData) {
-            if (!candleSeries || !keyLevels || keyLevels.length === 0) return;
+        function addPatternMarkers(keyLevels, candlesData, result = {}) {
+            if (!candleSeries || !keyLevels) return;
 
             // Clear old price lines
             priceLines.forEach(line => {
                 try { candleSeries.removePriceLine(line); } catch (e) { }
             });
             priceLines = [];
+
+            // Clear old trendlines
+            patternLineSeries.forEach(series => {
+                try { chart.removeSeries(series); } catch (e) { }
+            });
+            patternLineSeries = [];
 
             // Add horizontal price lines for each key level
             keyLevels.forEach(level => {
@@ -423,6 +430,45 @@
                     return a.time - b.time;
                 });
                 candleSeries.setMarkers(markers);
+            }
+
+            // Add slanted line segments
+            if (result.line_segments) {
+                result.line_segments.forEach(segment => {
+                    if (!segment.points || segment.points.length !== 2) return;
+                    
+                    const lineSeries = chart.addLineSeries({
+                        color: segment.color,
+                        lineWidth: segment.lineWidth || 2,
+                        lineStyle: segment.lineStyle || 0,
+                        crosshairMarkerVisible: false,
+                        lastValueVisible: false,
+                        priceLineVisible: false
+                    });
+                    
+                    // The points might be string dates (e.g. "2024-05-15") but lightweight-charts
+                    // expects the time format to match the candle series.
+                    // If the original data uses UTC timestamp integers, we need to match it.
+                    let pointsToSet = segment.points.map(pt => {
+                        let matchingCandle = candlesData.find(c => {
+                            if (typeof c.time === 'string') {
+                                return pt.time.startsWith(c.time);
+                            } else {
+                                const d = new Date(c.time * 1000);
+                                const iso = d.toISOString(); 
+                                const str = iso.replace('T', ' ').substring(0, 16);
+                                return pt.time.startsWith(str);
+                            }
+                        });
+                        return {
+                            time: matchingCandle ? matchingCandle.time : pt.time,
+                            value: pt.value
+                        };
+                    });
+                    
+                    lineSeries.setData(pointsToSet);
+                    patternLineSeries.push(lineSeries);
+                });
             }
         }
 
@@ -506,6 +552,12 @@
             });
             priceLines = [];
 
+            // 3. Remove trendlines
+            patternLineSeries.forEach(series => {
+                try { chart.removeSeries(series); } catch (e) { }
+            });
+            patternLineSeries = [];
+
             // 3. Remove shaded regions (if any were added in the future, they would be cleared here)
         }
 
@@ -538,7 +590,7 @@
             if (data && data.candles && data.candles.length > 0) {
                 setChartData(data.candles);
                 console.log(`Setting markers for: ${result.pattern_type}-${result.ticker}`);
-                addPatternMarkers(result.key_levels, data.candles);
+                addPatternMarkers(result.key_levels, data.candles, result);
             }
 
             // Show detail panel
@@ -726,7 +778,7 @@
 
             if (data && data.candles && data.candles.length > 0) {
                 setChartData(data.candles);
-                addPatternMarkers(result.key_levels, data.candles);
+                addPatternMarkers(result.key_levels, data.candles, result);
             }
 
             renderDetailPanel(result);
