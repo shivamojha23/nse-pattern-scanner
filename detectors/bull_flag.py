@@ -8,16 +8,21 @@ from scipy.signal import find_peaks
 from scipy.stats import linregress
 from .core import *
 
-def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
+def detect_bull_flag(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN", dates=None,
                      interval="1d", verbose=False):
     """
-    Detects Bull Flag patterns using structural_cache.
+    Detects Bull Flag patterns using strict wick boundaries and slanted trendline breakout detection.
     """
     from scipy.stats import linregress
     import numpy as np
     import pandas as pd
     
     prices = np.array(prices, dtype=float)
+    if highs is None: highs = prices
+    if lows is None: lows = prices
+    highs = np.array(highs, dtype=float)
+    lows = np.array(lows, dtype=float)
+
     if volumes is not None:
         volumes = np.array(volumes, dtype=float)
 
@@ -28,11 +33,11 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     patterns_found = []
 
     # Slow Path: Full Detection
-    rolling_min = pd.Series(prices).rolling(window=MAX_POLE_CANDLES, min_periods=5).min().values
+    rolling_min = pd.Series(lows).rolling(window=MAX_POLE_CANDLES, min_periods=5).min().values
     potential_return = np.zeros(n)
     for idx in range(MAX_POLE_CANDLES, n):
         if rolling_min[idx] > 0:
-            potential_return[idx] = (prices[idx] - rolling_min[idx]) / rolling_min[idx] * 100
+            potential_return[idx] = (highs[idx] - rolling_min[idx]) / rolling_min[idx] * 100
     potential_pole_ends = np.where(potential_return >= MIN_POLE_RISE_PCT)[0]
 
     valid_structures = []
@@ -47,7 +52,7 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if pole_start_idx < 0:
                 continue
 
-            rise_pct = (prices[pole_end_idx] - prices[pole_start_idx]) / prices[pole_start_idx] * 100
+            rise_pct = (highs[pole_end_idx] - lows[pole_start_idx]) / lows[pole_start_idx] * 100
             if rise_pct < MIN_POLE_RISE_PCT:
                 continue
 
@@ -75,7 +80,7 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
         if best_pole is None:
             continue
 
-        pole_top_price = prices[pole_end_idx]
+        pole_top_price = highs[pole_end_idx]
 
         for flag_len in range(MIN_FLAG_CANDLES, min(MAX_FLAG_CANDLES + 1, n - pole_end_idx)):
             flag_start = pole_end_idx + 1
@@ -84,11 +89,13 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
                 break
 
             flag_prices = prices[flag_start:flag_end + 1]
+            flag_highs = highs[flag_start:flag_end + 1]
+            flag_lows = lows[flag_start:flag_end + 1]
             if len(flag_prices) < MIN_FLAG_CANDLES:
                 continue
 
-            flag_high = float(np.max(flag_prices))
-            flag_low = float(np.min(flag_prices))
+            flag_high = float(np.max(flag_highs))
+            flag_low = float(np.min(flag_lows))
 
             if flag_high > pole_top_price * 1.001:
                 continue
@@ -97,7 +104,7 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if flag_range_pct > FLAG_CHANNEL_PCT:
                 continue
 
-            pole_size = pole_top_price - prices[best_pole["start_idx"]]
+            pole_size = pole_top_price - lows[best_pole["start_idx"]]
             retracement_pct = (pole_top_price - flag_low) / pole_size * 100 if pole_size > 0 else 0
             if retracement_pct > MAX_RETRACEMENT_PCT:
                 continue
@@ -108,17 +115,17 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             if flag_total_drift_pct > 0.5:
                 continue
 
-            # Calculate upper and lower bounds for the channel based on residuals
+            # Calculate upper and lower bounds for the channel based on residuals of highs and lows
             line_vals = flag_res.intercept + flag_res.slope * x
-            upper_intercept = flag_res.intercept + np.max(flag_prices - line_vals)
-            lower_intercept = flag_res.intercept + np.min(flag_prices - line_vals)
+            upper_intercept = flag_res.intercept + np.max(flag_highs - line_vals)
+            lower_intercept = flag_res.intercept + np.min(flag_lows - line_vals)
 
             pattern = {
                 "pattern_type":       "bull_flag",
                 "ticker":             ticker,
                 "verdict":            "VALID",
                 "reject_reason":      "",
-                "pole_start_price":   round(float(prices[best_pole["start_idx"]]), 2),
+                "pole_start_price":   round(float(lows[best_pole["start_idx"]]), 2),
                 "pole_top_price":     round(float(pole_top_price), 2),
                 "flag_low_price":     round(float(flag_low), 2),
                 "flag_high_price":    round(float(flag_high), 2),
@@ -148,10 +155,15 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
     
     for pat in valid_structures:
         flag_end = pat["flag_end_idx"]
-        pole_top_price = pat["pole_top_price"]
+        flag_start = pat["flag_start_idx"]
+        flag_slope = pat["flag_slope"]
+        upper_intercept = pat["flag_upper_intercept"]
+        
         breakout_idx = None
         for k in range(flag_end + 1, min(n, flag_end + 6)):
-            if prices[k] > pole_top_price:
+            rel_k = k - flag_start
+            upper_tl_val = upper_intercept + flag_slope * rel_k
+            if prices[k] > upper_tl_val:
                 breakout_idx = k
                 break
 
@@ -230,4 +242,27 @@ def detect_bull_flag(prices, volumes=None, ticker="UNKNOWN", dates=None,
             patterns_found.append(fpat)
 
     patterns_found.sort(key=lambda p: p.get("quality_score", 0), reverse=True)
-    return patterns_found
+    
+    # Deduplication
+    final_patterns = []
+    claimed = []
+    for c in patterns_found:
+        is_dup = False
+        for (cs, ce) in claimed:
+            ce_c = c.get("breakout_idx")
+            ce_s = ce
+            
+            if ce_c is not None and ce_s is not None:
+                if abs(c["pole_start_idx"] - cs) <= 10 and abs(ce_c - ce_s) <= 10:
+                    is_dup = True
+                    break
+            else:
+                if abs(c["pole_start_idx"] - cs) <= 10:
+                    is_dup = True
+                    break
+                    
+        if not is_dup:
+            final_patterns.append(c)
+            claimed.append((c["pole_start_idx"], c.get("breakout_idx")))
+            
+    return final_patterns

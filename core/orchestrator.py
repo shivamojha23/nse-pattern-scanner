@@ -51,7 +51,7 @@ from scipy.signal import find_peaks
 
 # Increment this version whenever you change core pattern logic or UI payload structure
 # so that the old cache is invalidated.
-ALGO_VERSION = "3.4"
+ALGO_VERSION = "3.5"
 
 # Fix Windows console encoding so emoji and special characters display correctly.
 if sys.platform == "win32":
@@ -344,7 +344,7 @@ def scan_ticker(df, ticker, patterns_to_scan, interval="1d", verbose=False, is_l
             ticker=ticker, dates=dates, interval=interval, verbose=verbose
         ),
         "bull_flag": lambda: detect_bull_flag(
-            close, volumes=vol, ticker=ticker, dates=dates,
+            close, highs=highs, lows=lows, volumes=vol, ticker=ticker, dates=dates,
             interval=interval, verbose=verbose
         ),
         "bear_flag": lambda: detect_bear_flag(
