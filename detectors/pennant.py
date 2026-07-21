@@ -90,6 +90,18 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
             
             if upper_slope >= 0 or lower_slope <= 0:
                 continue
+
+            # ── Structural Boundary Constraint ──
+            # Pennant consolidation must not exceed the pole end price.
+            # Bullish: pennant highs must stay within 1% of the pole peak.
+            # Bearish: pennant lows must stay within 1% of the pole trough.
+            pole_end_price = prices[pole_end_idx]
+            if pole_direction == "bullish":
+                if np.max(pennant_highs) > pole_end_price * 1.01:
+                    continue
+            else:  # bearish
+                if np.min(pennant_lows) < pole_end_price * 0.99:
+                    continue
                 
             # Shift trendlines to create true bounding boxes touching max wicks
             upper_line_vals = res_high.intercept + upper_slope * x
@@ -118,6 +130,13 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                     vol_pennant_pass = True
             else:
                 vol_pennant_pass = True 
+
+            # ── Convergence Ratio ──
+            # Width at start vs end of pennant; must be < 1 for true convergence
+            pennant_len = len(pennant_highs) - 1
+            start_width = shifted_upper_intercept - shifted_lower_intercept
+            end_width = (shifted_upper_intercept + upper_slope * pennant_len) - (shifted_lower_intercept + lower_slope * pennant_len)
+            convergence_ratio = round(float(end_width / start_width), 3) if start_width > 0 else 1.0
                 
             pattern = {
                 "pattern_type":       "pennant",
@@ -136,6 +155,7 @@ def detect_pennant(prices, highs=None, lows=None, volumes=None, ticker="UNKNOWN"
                 "res_high_intercept": float(shifted_upper_intercept),
                 "res_low_intercept":  float(shifted_lower_intercept),
                 "symmetry_diff":      round(float(slope_diff), 3),
+                "convergence_ratio":  convergence_ratio,
                 "vol_slope":          float(vol_slope),
                 "r_squared":          round(float(res_high.rvalue**2), 3),
                 "vol_pennant_pass":   vol_pennant_pass,

@@ -49,7 +49,7 @@ import argparse
 import math
 from scipy.signal import find_peaks
 
-ALGO_VERSION = "3.0"
+ALGO_VERSION = "3.1"
 
 # Fix Windows console encoding so emoji and special characters display correctly.
 if sys.platform == "win32":

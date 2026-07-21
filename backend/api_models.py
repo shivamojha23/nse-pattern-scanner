@@ -389,15 +389,15 @@ def _extract_pattern_status(pattern_dict):
     """
     Derives "confirmed" or "forming" from detector output.
 
-    - double_top / double_bottom: have explicit `status` field
+    - double_top / double_bottom / pennant: have explicit `status` field
     - cup_and_handle: has `breakout_confirmed` boolean
     - All others: only emit on breakout -> always "confirmed" (until Track B)
     """
     ptype = pattern_dict.get("pattern_type", "")
 
-    # Double top/bottom have an explicit status field
-    if ptype in ("double_top", "double_bottom"):
-        return pattern_dict.get("status", "confirmed")
+    # If the detector explicitly provided a status string, use it
+    if "status" in pattern_dict:
+        return pattern_dict["status"]
 
     # Cup and handle uses breakout_confirmed boolean
     if ptype == "cup_and_handle":
