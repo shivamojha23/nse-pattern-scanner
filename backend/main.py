@@ -354,10 +354,10 @@ async def run_scan(
         # Sort by quality score (highest first), then ticker, then pattern, then signal date
         all_matches.sort(
             key=lambda m: (
-                -m.get("quality_score", 0.0),
-                m.get("ticker", ""),
-                m.get("pattern_type", ""),
-                m.get("raw", {}).get("signal_date", "")
+                -(m.get("quality_score") or 0.0),
+                m.get("ticker") or "",
+                m.get("pattern_type") or "",
+                (m.get("raw") or {}).get("signal_date") or ""
             )
         )
 

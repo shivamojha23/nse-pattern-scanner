@@ -1,0 +1,12 @@
+services:
+  nse-pattern-scanner:
+    build: .
+    container_name: nse_pattern_scanner
+    ports:
+      - "8000:8000"
+    volumes:
+      # Mount cache database to persist stock data across container restarts
+      - ./cache.db:/app/cache.db
+    restart: unless-stopped
+    environment:
+      - PYTHONUNBUFFERED=1

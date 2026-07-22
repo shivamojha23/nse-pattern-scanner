@@ -1,0 +1,17 @@
+.git
+.gitignore
+.idea
+.vscode
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.venv
+env/
+venv/
+tests/
+ARCHITECTURE.md
+PRD.md
+README.md
+CHEAT_SHEET.md
