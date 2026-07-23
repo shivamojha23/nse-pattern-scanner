@@ -37,8 +37,21 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
     smoothed = smooth_prices(prices, window=SMOOTHING_WINDOW)
 
     min_prominence = np.median(smoothed) * 0.01
-    peak_indices, _ = find_peaks(smoothed, distance=10, prominence=min_prominence)
+    raw_peak_indices, _ = find_peaks(smoothed, distance=10, prominence=min_prominence)
     trough_indices, _ = find_peaks(-smoothed, distance=10, prominence=min_prominence)
+
+    # ── Step 1b: Snap smoothed peaks to nearby raw-price maximum ──
+    # Smoothing shifts peak locations; snap each peak to the actual raw
+    # price maximum within ±SNAP_WINDOW candles for geometric accuracy.
+    SNAP_WINDOW = 3
+    peak_indices = []
+    for pi in raw_peak_indices:
+        snap_start = max(0, pi - SNAP_WINDOW)
+        snap_end = min(len(prices), pi + SNAP_WINDOW + 1)
+        snapped = snap_start + int(np.argmax(prices[snap_start:snap_end]))
+        if snapped not in peak_indices:
+            peak_indices.append(snapped)
+    peak_indices = np.array(sorted(set(peak_indices)))
 
     if len(peak_indices) < 2 or len(trough_indices) < 1:
 
@@ -56,21 +69,18 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             if right_rim_price == 0:
                 continue
 
-            is_macro = interval.endswith('d') or interval.endswith('w') or interval.endswith('wk')
-            if is_macro:
-                window_start = max(0, left_rim_idx - 20)
-                window_end = min(len(prices), left_rim_idx + 21)
-                if np.max(prices[window_start:window_end]) > left_rim_price:
-                    continue
+            # ── Uptrend quality factor (not a rejection gate) ──
+            # Check if there was a rising trend into the left rim.
+            # This is used to boost quality score later, not to reject.
+            uptrend_lookback = min(20, left_rim_idx)
+            if uptrend_lookback >= 5:
+                lookback_start = left_rim_idx - uptrend_lookback
+                lookback_prices = prices[lookback_start:left_rim_idx + 1]
+                lr_res = linregress(np.arange(len(lookback_prices)), lookback_prices)
+                has_uptrend = lr_res.slope > 0 and lr_res.rvalue ** 2 > 0.3
             else:
-                if left_rim_idx < 10:
-                    continue
-                if prices[left_rim_idx - 10] >= left_rim_price:
-                    continue
-                window_start = max(0, left_rim_idx - 5)
-                window_end = min(len(prices), left_rim_idx + 6)
-                if np.max(prices[window_start:window_end]) > left_rim_price:
-                    continue
+                has_uptrend = False
+
 
             cup_width = right_rim_idx - left_rim_idx
             if cup_width < 15 or cup_width > len(prices) * 0.8:
@@ -102,16 +112,37 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             if not (MIN_CUP_DROP_PCT <= cup_drop_pct <= MAX_CUP_DROP_PCT):
                 continue
 
+            # ── Internal retracement check (anti-W-shape) ──
+            # Walk from left rim to cup bottom, tracking the running low.
+            # If the price bounces back more than MAX_INTERNAL_RETRACE of the
+            # total cup depth, it's a W-shape, not a smooth U-cup.
+            MAX_INTERNAL_RETRACE = 0.40  # 40% of cup depth
+            cup_depth = left_rim_price - cup_bottom_price
+            running_low = left_rim_price
+            w_shape_detected = False
+            for k in range(left_rim_idx + 1, cup_bottom_idx):
+                close_k = prices[k]
+                if close_k < running_low:
+                    running_low = close_k
+                else:
+                    # Price bounced up from running low
+                    bounce = close_k - running_low
+                    if bounce > MAX_INTERNAL_RETRACE * cup_depth:
+                        w_shape_detected = True
+                        break
+            if w_shape_detected:
+                continue
+
             recovery_pct = abs(right_rim_price - left_rim_price) / left_rim_price * 100
             if recovery_pct > MAX_RECOVERY_GAP_PCT:
                 continue
 
-            valid_cups.append((left_rim_idx, cup_bottom_idx, right_rim_idx))
+            valid_cups.append((left_rim_idx, cup_bottom_idx, right_rim_idx, has_uptrend))
 
     candidates = []
     
     # Evaluate handle and breakout for each valid cup structure
-    for left_rim_idx, cup_bottom_idx, right_rim_idx in valid_cups:
+    for left_rim_idx, cup_bottom_idx, right_rim_idx, has_uptrend in valid_cups:
         left_rim_price = prices[left_rim_idx]
         right_rim_price = prices[right_rim_idx]
         cup_bottom_price = prices[cup_bottom_idx]
@@ -232,24 +263,47 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
                     vol_breakout_avg = float(np.mean(breakout_vols))
                     vol_breakout_pass = vol_breakout_avg > (BREAKOUT_VOLUME_MULTIPLIER * vol_sma50)
 
-        # ── Quality score ──
+        # ── Quality score (100-Point Granular Matrix) ──
+        handle_retrace_ratio = (handle_pullback / cup_depth) if cup_depth > 0 else 0
         quality_score = compute_quality_score("cup_and_handle", {
             "cup_drop_pct": cup_drop_pct,
+            "handle_retrace_ratio": handle_retrace_ratio,
+            "handle_slope": handle_slope,
+            "roundedness_pct": roundedness_pct,
+            "recovery_pct": recovery_pct,
+            "vol_decline_pass": vol_decline_pass,
             "recovery_vol_ratio": vol_recovery_ratio if vol_recovery_ratio else 0,
             "breakout_vol_ratio": (vol_breakout_avg / vol_sma50) if vol_sma50 > 0 else 0,
+            "has_uptrend": has_uptrend,
         })
 
         # ── Determine validity ──
         is_valid = True
         reject_reason = ""
 
-        if max_internal_close > left_rim_price:
+        # ── Internal Close / High Check (rim-proximity tolerance) ──
+        # Only candles within RIM_TOLERANCE_CANDLES of either rim are allowed
+        # to slightly exceed the left rim price. Mid-cup breaches still fail.
+        RIM_TOLERANCE_CANDLES = 3
+        mid_zone_start = left_rim_idx + 1 + RIM_TOLERANCE_CANDLES
+        mid_zone_end = right_rim_idx - RIM_TOLERANCE_CANDLES
+        if mid_zone_start < mid_zone_end:
+            mid_closes = prices[mid_zone_start:mid_zone_end]
+            mid_highs = highs[mid_zone_start:mid_zone_end]
+            max_mid_close = np.max(mid_closes) if len(mid_closes) > 0 else 0
+            max_mid_high = np.max(mid_highs) if len(mid_highs) > 0 else 0
+        else:
+            # Cup is very narrow, skip mid-zone check
+            max_mid_close = 0
+            max_mid_high = 0
+
+        if max_mid_close > left_rim_price:
             is_valid = False
-            reject_reason = (f"Internal close (₹{max_internal_close:.2f}) exceeded "
+            reject_reason = (f"Internal close (₹{max_mid_close:.2f}) in mid-cup exceeded "
                              f"Left Rim close (₹{left_rim_price:.2f}).")
-        elif max_internal_high > rim_ceiling:
+        elif max_mid_high > rim_ceiling:
             is_valid = False
-            reject_reason = (f"Internal high (₹{max_internal_high:.2f}) exceeded "
+            reject_reason = (f"Internal high (₹{max_mid_high:.2f}) in mid-cup exceeded "
                              f"Left Rim High (₹{rim_ceiling:.2f}).")
         elif max_daily_jump > MAX_DISCONTINUITY_PCT:
             is_valid = False
@@ -289,10 +343,10 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             reject_reason = (f"No real handle — immediate continuation "
                              f"(breakout in {pause_duration} candles < "
                              f"{MIN_PAUSE_CANDLES}).")
-        elif handle_slope > 0:
+        elif handle_slope > 1.0:
             is_valid = False
             reject_reason = (f"Handle is not a genuine pause (slope "
-                             f"{handle_slope:.2f} > 0).")
+                             f"{handle_slope:.2f} > 1.0).")
         elif handle_pullback > max_handle_dip:
             is_valid = False
             reject_reason = (f"Handle pullback (₹{handle_pullback:.2f}) "
@@ -352,6 +406,7 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             "vol_recovery_pass":   vol_recovery_pass,
             "vol_breakout_avg":    round(float(vol_breakout_avg), 0),
             "vol_breakout_pass":   vol_breakout_pass,
+            "has_uptrend":         has_uptrend,
             "smoothing_method":    f"SMA({SMOOTHING_WINDOW})",
         }
 
@@ -363,9 +418,10 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             if breakout_confirmed and breakout_start_idx > 0:
                 pattern["signal_date"] = str(dates[breakout_start_idx])
 
-        if not is_valid and verbose:
-            from pattern_scanner import print_cup_and_handle
-            print_cup_and_handle(pattern, index="REJECTED")
+        if not is_valid:
+            if verbose:
+                from pattern_scanner import print_cup_and_handle
+                print_cup_and_handle(pattern, index="REJECTED")
             continue
 
         candidates.append(pattern)

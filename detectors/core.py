@@ -16,18 +16,18 @@ BATCH_SLEEP = 2
 SCAN_INTERVAL_MINUTES = 15
 IST_OFFSET = datetime.timedelta(hours=5, minutes=30)
 MIN_CUP_DROP_PCT = 10
-MAX_CUP_DROP_PCT = 35
+MAX_CUP_DROP_PCT = 45
 MAX_RECOVERY_GAP_PCT = 3
-HANDLE_MAX_RETRACE_RATIO = 0.32
+HANDLE_MAX_RETRACE_RATIO = 0.50
 MIN_CUP_CANDLES = 10
 MIN_HANDLE_CANDLES = 5
 RIGHT_RIM_STABILITY_PCT = 3.0
 BASE_ZONE_PCT = 0.05
-MIN_BASE_CANDLES_PCT = 0.20
+MIN_BASE_CANDLES_PCT = 0.08
 BREAKOUT_CONFIRM_CANDLES = 3
 MAX_HANDLE_LOOKFORWARD_CANDLES = 30
 MIN_PAUSE_CANDLES = 5
-MAX_DISCONTINUITY_PCT = 0.08
+MAX_DISCONTINUITY_PCT = 0.15
 MIN_POLE_RISE_PCT = 8
 MIN_POLE_DROP_PCT = 8
 MAX_POLE_CANDLES = 20
@@ -129,15 +129,72 @@ def compute_quality_score(pattern_type, metrics):
         All other patterns use a 0–10 scale.
     """
     if pattern_type == "cup_and_handle":
-        # ── Refactored 0-10 Scale ──
-        cup_drop_pct = metrics.get("cup_drop_pct", 0)
-        drop_score = min(3.0, max(0, cup_drop_pct / 10.0))
+        # ── Granular 100-Point Quality Matrix (Normalized to 0.0 - 10.0) ──
+        raw_score = 0.0
+
+        # 1. Handle Quality (Max 30 pts)
+        retrace = metrics.get("handle_retrace_ratio", 0.5)
+        if retrace <= 0.25:
+            raw_score += 20.0
+        elif retrace <= 0.35:
+            raw_score += 15.0
+        elif retrace <= 0.45:
+            raw_score += 10.0
+        else:
+            raw_score += 4.0
+
+        slope = metrics.get("handle_slope", 0)
+        if slope <= 0:
+            raw_score += 10.0
+        elif slope <= 1.0:
+            raw_score += 5.0
+
+        # 2. Cup Shape & Geometry (Max 30 pts)
+        drop = metrics.get("cup_drop_pct", 0)
+        if 15.0 <= drop <= 30.0:
+            raw_score += 10.0
+        elif 10.0 <= drop <= 45.0:
+            raw_score += 6.0
+
+        roundedness = metrics.get("roundedness_pct", 0)
+        if roundedness >= 0.20:
+            raw_score += 10.0
+        elif roundedness >= 0.12:
+            raw_score += 7.0
+        elif roundedness >= 0.08:
+            raw_score += 4.0
+
+        rec_gap = metrics.get("recovery_pct", 3.0)
+        if rec_gap <= 1.5:
+            raw_score += 10.0
+        elif rec_gap <= 3.0:
+            raw_score += 5.0
+
+        # 3. Volume Confirmation (Max 25 pts)
+        if metrics.get("vol_decline_pass"):
+            raw_score += 7.0
+
         rv = max(metrics.get("recovery_vol_ratio", 0), 0)
-        rv_score = min(3.0, max(0, rv * 1.5))
+        if rv >= 1.5:
+            raw_score += 10.0
+        elif rv >= 1.0:
+            raw_score += 6.0
+
         bv = max(metrics.get("breakout_vol_ratio", 0), 0)
-        bv_score = min(4.0, max(0, bv * 1.33))
-        
-        return round(min(10.0, max(0, drop_score + rv_score + bv_score)), 1)
+        if bv >= 1.5:
+            raw_score += 8.0
+        elif bv >= 1.0:
+            raw_score += 4.0
+
+        # 4. Trend Context (Max 15 pts)
+        if metrics.get("has_uptrend"):
+            raw_score += 15.0
+        else:
+            raw_score += 5.0
+
+        # Normalize 0-100 pts down to 0.0-10.0 scale
+        normalized_score = round(min(100.0, max(0.0, raw_score)) / 10.0, 1)
+        return normalized_score
 
     elif pattern_type in ("bull_flag", "bear_flag"):
         # Pole strength (0–3): 8% rise → 0, 20% → 3
