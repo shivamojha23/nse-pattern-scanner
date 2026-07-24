@@ -12,6 +12,7 @@ from zoneinfo import ZoneInfo
 
 CACHE_DB_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'cache.db')
 
+DB_WRITE_LOCK = threading.Lock()
 _local = threading.local()
 
 def get_db_connection():
@@ -182,13 +183,14 @@ def _df_to_db(conn, df, ticker, interval):
             continue
             
     if records:
-        cursor = conn.cursor()
-        cursor.executemany('''
-            INSERT OR REPLACE INTO layer1_candles 
-            (ticker, interval, timestamp, open, high, low, close, volume) 
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ''', records)
-        conn.commit()
+        with DB_WRITE_LOCK:
+            cursor = conn.cursor()
+            cursor.executemany('''
+                INSERT OR REPLACE INTO layer1_candles 
+                (ticker, interval, timestamp, open, high, low, close, volume) 
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ''', records)
+            conn.commit()
 
 def _reconcile_corporate_actions(conn, ticker, interval, utc_today_str):
     """
@@ -203,16 +205,17 @@ def _reconcile_corporate_actions(conn, ticker, interval, utc_today_str):
     if not df.empty:
         _df_to_db(conn, df, ticker, interval)
         
-        # Clear Layer 4 structural cache for this ticker because prices changed
-        cursor.execute("DELETE FROM layer4_structural WHERE ticker = ? AND interval = ?", (ticker, interval))
-        
-        # Update reconciliation date
-        cursor.execute('''
-            UPDATE layer1_meta 
-            SET last_reconciled_date = ? 
-            WHERE ticker = ? AND interval = ?
-        ''', (utc_today_str, ticker, interval))
-        conn.commit()
+        with DB_WRITE_LOCK:
+            # Clear Layer 4 structural cache for this ticker because prices changed
+            cursor.execute("DELETE FROM layer4_structural WHERE ticker = ? AND interval = ?", (ticker, interval))
+            
+            # Update reconciliation date
+            cursor.execute('''
+                UPDATE layer1_meta 
+                SET last_reconciled_date = ? 
+                WHERE ticker = ? AND interval = ?
+            ''', (utc_today_str, ticker, interval))
+            conn.commit()
 
 def _parse_meta_date(date_str: str) -> datetime.date:
     """Helper to safely parse either old YYYY-MM-DD or new ISO 8601 UTC strings to IST dates."""
@@ -267,9 +270,10 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
                 df_delta = yf.download(tickers=ticker, start=delta_start_str, interval=interval, progress=False)
                 _df_to_db(conn, df_delta, ticker, interval)
                 
-                # Update last_updated_date (we don't change earliest_date)
-                cursor.execute("UPDATE layer1_meta SET last_updated_date = ? WHERE ticker = ? AND interval = ?", (utc_now_str, ticker, interval))
-                conn.commit()
+                with DB_WRITE_LOCK:
+                    # Update last_updated_date (we don't change earliest_date)
+                    cursor.execute("UPDATE layer1_meta SET last_updated_date = ? WHERE ticker = ? AND interval = ?", (utc_now_str, ticker, interval))
+                    conn.commit()
                 
             # Check for corporate action reconciliation (every 7 days)
             last_recon_dt = _parse_meta_date(last_reconciled_str)
@@ -287,12 +291,13 @@ def get_stock_data(ticker: str, interval: str, period: str) -> pd.DataFrame:
             actual_earliest_utc = df_full.index.min().tz_convert('UTC') if df_full.index.tzinfo else df_full.index.min().tz_localize('UTC')
             actual_earliest_str = actual_earliest_utc.isoformat()
             
-            cursor.execute('''
-                INSERT OR REPLACE INTO layer1_meta 
-                (ticker, interval, earliest_date, last_updated_date, last_reconciled_date)
-                VALUES (?, ?, ?, ?, ?)
-            ''', (ticker, interval, actual_earliest_str, utc_now_str, utc_now_str))
-            conn.commit()
+            with DB_WRITE_LOCK:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO layer1_meta 
+                    (ticker, interval, earliest_date, last_updated_date, last_reconciled_date)
+                    VALUES (?, ?, ?, ?, ?)
+                ''', (ticker, interval, actual_earliest_str, utc_now_str, utc_now_str))
+                conn.commit()
             
     # 2. Retrieve data from cache to return as DataFrame
     cutoff_ts = int(datetime.datetime.combine(requested_start_dt, datetime.time.min).replace(tzinfo=datetime.timezone.utc).timestamp())
@@ -382,11 +387,12 @@ def get_cached_watchlist(list_name="nifty200") -> list:
             fetched_list = None
         else:
             # Save to cache
-            cursor.execute('''
-                INSERT OR REPLACE INTO layer2_watchlist (list_name, tickers, fetched_at)
-                VALUES (?, ?, ?)
-            ''', (list_name, json.dumps(fetched_list), utc_now_str))
-            conn.commit()
+            with DB_WRITE_LOCK:
+                cursor.execute('''
+                    INSERT OR REPLACE INTO layer2_watchlist (list_name, tickers, fetched_at)
+                    VALUES (?, ?, ?)
+                ''', (list_name, json.dumps(fetched_list), utc_now_str))
+                conn.commit()
             return fetched_list
         
     # Fallback if fetch failed

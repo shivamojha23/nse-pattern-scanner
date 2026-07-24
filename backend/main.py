@@ -39,6 +39,10 @@ import sqlite3
 import json
 from fastapi.staticfiles import StaticFiles
 from contextlib import asynccontextmanager
+import base64
+import uuid
+import cv2
+from ultralytics import YOLO
 
 # Import our scanner adapter and cache
 from backend.scanner import (
@@ -59,6 +63,13 @@ from backend.api_models import (
     _format_date, _make_serializable, _extract_pattern_key_levels, _extract_line_segments, _extract_checks,
     _extract_pattern_status
 )
+from pydantic import BaseModel
+
+class YoloVerifyRequest(BaseModel):
+    image_base64: str
+
+# Global YOLO model
+yolo_model = None
 
 # =============================================================================
 #  APP SETUP
@@ -72,6 +83,19 @@ async def lifespan(app: FastAPI):
     print("=" * 60)
     print("  Local URL : http://localhost:8000")
     print("")
+    
+    global yolo_model
+    model_path = os.path.join(_project_root, "model.pt")
+    if os.path.exists(model_path):
+        try:
+            print("  🤖 Loading YOLO Model...")
+            yolo_model = YOLO(model_path)
+            print("  ✅ YOLO Model loaded successfully!")
+        except Exception as e:
+            print(f"  ❌ Failed to load YOLO Model: {e}")
+    else:
+        print(f"  ⚠️ YOLO Model not found at {model_path}. Verification feature will be disabled.")
+        
     print("  Available Endpoints:")
     print("  ────────────────────────────────────────")
     print("  GET  /api/health         → Health check")
@@ -197,6 +221,54 @@ async def market_status():
 
 # =============================================================================
 #  ENDPOINT 3: /api/watchlist
+# =============================================================================
+
+@app.post("/api/verify_yolo")
+async def verify_yolo(req: YoloVerifyRequest = Body(...)):
+    """
+    Verifies a pattern using the YOLO model.
+    Accepts a base64 encoded image string.
+    """
+    if yolo_model is None:
+        raise HTTPException(status_code=503, detail="YOLO model is not loaded.")
+        
+    try:
+        # Decode base64 image
+        header, encoded = req.image_base64.split(",", 1) if "," in req.image_base64 else ("", req.image_base64)
+        image_data = base64.b64decode(encoded)
+        
+        # Save temp image
+        temp_filename = os.path.join(_backend_dir, f"temp_{uuid.uuid4().hex}.png")
+        with open(temp_filename, "wb") as f:
+            f.write(image_data)
+            
+        # Run YOLO inference
+        results = yolo_model(temp_filename)
+        
+        # Determine labels
+        classes = ['Head and shoulders bottom', 'Head and shoulders top', 'M_Head', 'StockLine', 'Triangle', 'W_Bottom']
+        predicted_labels = []
+        if results and results[0].boxes:
+            class_indices = results[0].boxes.cls.tolist()
+            for idx in class_indices:
+                predicted_labels.append(classes[int(idx)])
+            predicted_labels = list(set(predicted_labels))
+            predicted_label_str = ", ".join(predicted_labels)
+        else:
+            predicted_label_str = "No pattern detected"
+            
+        # Cleanup
+        if os.path.exists(temp_filename):
+            os.remove(temp_filename)
+            
+        return {"status": "success", "yolo_prediction": predicted_label_str}
+        
+    except Exception as e:
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+        
+# =============================================================================
+#  ENDPOINT 4: /api/watchlist (shifted down)
 # =============================================================================
 
 @app.get("/api/watchlist", response_model=WatchlistResponse)

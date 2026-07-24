@@ -531,7 +531,49 @@
                 <div class="key-levels">${levelsHTML}</div>
 
                 ${description ? `<div class="pattern-description">💡 <strong>What this means:</strong> ${description}</div>` : ''}
+                
+                <div class="yolo-verification-section" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+                    <button class="btn btn-primary" id="verifyYoloBtn" style="width: 100%; justify-content: center; background: linear-gradient(135deg, #6366f1, #8b5cf6);">🤖 Verify with YOLO AI</button>
+                    <div id="yoloResult" style="margin-top: 12px; font-weight: 500; text-align: center; font-size: 14px;"></div>
+                </div>
             `;
+            
+            // YOLO Verification Click Handler
+            const verifyBtn = document.getElementById('verifyYoloBtn');
+            const yoloResultDiv = document.getElementById('yoloResult');
+            if (verifyBtn) {
+                verifyBtn.addEventListener('click', async () => {
+                    verifyBtn.disabled = true;
+                    verifyBtn.innerHTML = '🔄 Analyzing Chart...';
+                    yoloResultDiv.textContent = '';
+                    
+                    try {
+                        // 1. Take a screenshot of the Lightweight Chart
+                        const canvas = chart.takeScreenshot();
+                        const imageBase64 = canvas.toDataURL('image/png');
+                        
+                        // 2. Send to backend YOLO endpoint
+                        const response = await fetch(API_BASE + '/api/verify_yolo', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ image_base64: imageBase64 })
+                        });
+                        
+                        const data = await response.json();
+                        if (response.ok) {
+                            yoloResultDiv.innerHTML = `YOLO Output: <strong style="color: #22c55e;">${data.yolo_prediction}</strong>`;
+                        } else {
+                            yoloResultDiv.innerHTML = `<span style="color: #ef4444;">Error: ${data.detail || 'Failed'}</span>`;
+                        }
+                    } catch (e) {
+                        console.error('YOLO Verification Error:', e);
+                        yoloResultDiv.innerHTML = `<span style="color: #ef4444;">Connection failed. Is the backend running?</span>`;
+                    } finally {
+                        verifyBtn.disabled = false;
+                        verifyBtn.innerHTML = '🤖 Verify with YOLO AI';
+                    }
+                });
+            }
         }
 
         // ──────────────────────────────────────────────────────────
