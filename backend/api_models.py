@@ -261,7 +261,27 @@ def _extract_line_segments(pattern_dict):
     ptype = pattern_dict.get("pattern_type", "")
     segments = []
 
-    if ptype == "pennant":
+    if ptype == "cup_and_handle":
+        if pattern_dict.get("cup_curve"):
+            segments.append({
+                "points": pattern_dict["cup_curve"],
+                "color": "#9C27B0", # Purple arc for the cup curve
+                "lineWidth": 2, "lineStyle": 0 # Solid
+            })
+        if pattern_dict.get("handle_upper"):
+            segments.append({
+                "points": pattern_dict["handle_upper"],
+                "color": "#FF9800", # Orange
+                "lineWidth": 2, "lineStyle": 2 # Dashed
+            })
+        if pattern_dict.get("handle_lower"):
+            segments.append({
+                "points": pattern_dict["handle_lower"],
+                "color": "#FF9800", # Orange
+                "lineWidth": 2, "lineStyle": 2 # Dashed
+            })
+
+    elif ptype == "pennant":
         # The Pole
         if pattern_dict.get("pole_start_date") and pattern_dict.get("pole_end_date"):
             segments.append({

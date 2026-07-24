@@ -417,6 +417,48 @@ def detect_cup_and_handle(prices, highs=None, volumes=None,
             pattern["handle_low_date"] = str(dates[handle_low_idx])
             if breakout_confirmed and breakout_start_idx > 0:
                 pattern["signal_date"] = str(dates[breakout_start_idx])
+            
+            # --- 1. Cup Curve (Parabola) ---
+            # Fit y = ax^2 + bx + c through Left Rim, Bottom, and Right Rim
+            x = np.array([left_rim_idx, cup_bottom_idx, right_rim_idx])
+            y = np.array([left_rim_price, cup_bottom_price, right_rim_price])
+            # Only fit if x coords are distinct and ordered
+            if len(set(x)) == 3 and left_rim_idx < cup_bottom_idx < right_rim_idx:
+                coeffs = np.polyfit(x, y, 2)
+                curve_pts = []
+                # Sample ~20 points along the curve
+                step = max(1, (right_rim_idx - left_rim_idx) // 20)
+                for xi in range(left_rim_idx, right_rim_idx + 1, step):
+                    if xi >= len(dates): break
+                    yi = np.polyval(coeffs, xi)
+                    curve_pts.append({"time": str(dates[xi]), "value": round(float(yi), 2)})
+                # Ensure last point is exactly right rim
+                curve_pts.append({"time": str(dates[right_rim_idx]), "value": round(float(right_rim_price), 2)})
+                pattern["cup_curve"] = curve_pts
+
+            # --- 2. Handle Lines ---
+            end_idx = breakout_start_idx if (breakout_confirmed and breakout_start_idx > 0) else (len(prices) - 1)
+            end_idx = min(end_idx, len(dates) - 1)
+            
+            # Upper Handle Line (Right Rim -> Breakout)
+            upper_handle = [
+                {"time": str(dates[right_rim_idx]), "value": round(float(right_rim_price), 2)},
+                {"time": str(dates[end_idx]), "value": round(float(right_rim_price), 2)} # Flat resistance
+            ]
+            pattern["handle_upper"] = upper_handle
+            
+            # Lower Handle Line (Right Rim -> Handle Low -> Breakout)
+            # We'll just draw a slanted support line from Right Rim to Handle Low, extended to breakout
+            if handle_low_idx > right_rim_idx:
+                hl_len = handle_low_idx - right_rim_idx
+                hl_slope = (handle_low_price - right_rim_price) / hl_len
+                end_len = end_idx - right_rim_idx
+                end_price = right_rim_price + (hl_slope * end_len)
+                lower_handle = [
+                    {"time": str(dates[right_rim_idx]), "value": round(float(right_rim_price), 2)},
+                    {"time": str(dates[end_idx]), "value": round(float(end_price), 2)}
+                ]
+                pattern["handle_lower"] = lower_handle
 
         if not is_valid:
             if verbose:
